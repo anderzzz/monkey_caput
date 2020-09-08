@@ -50,9 +50,36 @@ class FungiImg(Dataset):
 
         return image
 
+class StandardTransform(object):
+    '''Standard Image Transforms, typically instantiated and provided to the DataSet class
+
+    '''
+    def __init__(self, min_dim=300, to_tensor=True, normalize=False):
+
+        self.transforms = []
+        self.transforms.append(transforms.ToPILImage())
+        self.transforms.append(transforms.Resize(min_dim))
+        if to_tensor:
+            self.transforms.append(transforms.ToTensor())
+        if normalize:
+            raise NotImplementedError('Still fixing this stuff')
+            self.transforms.append(transforms.Normalize())
+
+        self.t_total = transforms.Compose(self.transforms)
+
+    def __call__(self, img):
+        return self.t_total(img)
+
 
 def test1():
     fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi')
     xx = fds[1]
 
-test1()
+def test2():
+    tt = StandardTransform(300, to_tensor=True, normalize=False)
+    fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi', transform=tt)
+    xx = fds[1]
+    io.imsave('dummy.png', xx.permute(1,2,0))
+
+
+test2()
