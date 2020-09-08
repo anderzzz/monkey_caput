@@ -1,13 +1,19 @@
 '''Fungi Image Dataset class
 
+The class presupposes that the fungi data is organized in a table with headers:
+
+    Kingdom, Division, Subdivision, Class, Order, Family, Genus, Species, InstanceIndex, ImageName
+
+Written By: Anders Ohrn, September 2020
+
 '''
 import torch
 import pandas as pd
 import os
 from skimage import io
 
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
+from torch.utils.data import Dataset
+from torchvision import transforms
 
 class FungiImg(Dataset):
     '''The Fungi Image Dataset Class
@@ -21,14 +27,23 @@ class FungiImg(Dataset):
             on a sample.
 
     '''
-    def __init__(self, csv_file, root_dir, selector=None, transform=None):
+    def __init__(self, csv_file, root_dir, selector=None, transform=None, label_keys=None):
 
         self.img_toc = pd.read_csv(csv_file, index_col=(0,1,2,3,4,5,6,7,8))
         self.root_dir = root_dir
         self.transform = transform
 
+        # Discard data as if never present
         if not selector is None:
             self.img_toc = self.img_toc.loc[selector]
+
+        # Assign labels to data. This does not control for disjoint definitions or completeness
+        if not label_keys is None:
+            self.label_keys = label_keys
+        else:
+            species = self.img_toc.index.unique(level='Species')
+            self.label_keys = ['Species == "{}"'.format(sss) for sss in species]
+        self.img_toc = pd.concat(self._assign_label(self.label_keys))
 
     def __len__(self):
         return len(self.img_toc)
@@ -40,6 +55,7 @@ class FungiImg(Dataset):
 
         row = self.img_toc.iloc[idx]
         img_name = row[0]
+        label = row[1]
         rel_path = list(row.name)[1:-1]
         rel_path.append(img_name)
         img_name = os.path.join(self.root_dir, *tuple(rel_path))
@@ -48,13 +64,30 @@ class FungiImg(Dataset):
         if not self.transform is None:
             image = self.transform(image)
 
-        return image
+        return image, label
+
+    def _assign_label(self, l_keys):
+        category_slices = []
+        for label_int, query_label in enumerate(l_keys):
+            subset_label = self.img_toc.query(query_label)
+
+            if len(subset_label) > 0:
+                subset_label.loc[:, 'ClassLabel'] = label_int
+                category_slices.append(subset_label)
+
+        return category_slices
+
+    @property
+    def label_semantics(self):
+        return dict([(count, label_select) for count, label_select in enumerate(self.label_keys)])
+
 
 class StandardTransform(object):
     '''Standard Image Transforms, typically instantiated and provided to the DataSet class
 
     '''
-    def __init__(self, min_dim=300, to_tensor=True, normalize=False):
+    def __init__(self, min_dim=300, to_tensor=True,
+                 normalize=True, norm_mean=[0.485, 0.456, 0.406], norm_std=[0.229, 0.224, 0.225]):
 
         self.transforms = []
         self.transforms.append(transforms.ToPILImage())
@@ -62,8 +95,7 @@ class StandardTransform(object):
         if to_tensor:
             self.transforms.append(transforms.ToTensor())
         if normalize:
-            raise NotImplementedError('Still fixing this stuff')
-            self.transforms.append(transforms.Normalize())
+            self.transforms.append(transforms.Normalize(norm_mean, norm_std))
 
         self.t_total = transforms.Compose(self.transforms)
 
@@ -73,13 +105,19 @@ class StandardTransform(object):
 
 def test1():
     fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi')
-    xx = fds[1]
+    xx, label = fds[1]
+    print (fds.label_semantics)
 
 def test2():
     tt = StandardTransform(300, to_tensor=True, normalize=False)
     fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi', transform=tt)
-    xx = fds[1]
+    xx, label = fds[1000]
     io.imsave('dummy.png', xx.permute(1,2,0))
+    print (label)
 
+def test3():
+    fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
+                   label_keys=('Genus == "Cantharellus"', 'Genus == "Amanita"'))
+    print (fds.label_semantics)
 
-test2()
+test1()
