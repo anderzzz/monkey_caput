@@ -12,8 +12,14 @@ import pandas as pd
 import os
 from skimage import io
 
+from enum import Enum
+
 from torch.utils.data import Dataset
 from torchvision import transforms
+
+class RawData(Enum):
+    '''Number of rows in the image raw data'''
+    N_ROWS = 15695
 
 class FungiImg(Dataset):
     '''The Fungi Image Dataset Class
@@ -27,8 +33,6 @@ class FungiImg(Dataset):
             on a sample.
 
     '''
-    RAW_TABLE_ROWS = 15695
-
     def __init__(self, csv_file, root_dir, selector=None, iselector=None, transform=None, label_keys=None):
 
         self.img_toc = pd.read_csv(csv_file, index_col=(0,1,2,3,4,5,6,7,8))
@@ -90,11 +94,6 @@ class FungiImg(Dataset):
         '''The dictionary that maps '''
         return dict([(count, label_select) for count, label_select in enumerate(self.label_keys)])
 
-    @classmethod
-    def raw_table_rows(cls):
-        return cls.RAW_TABLE_ROWS
-
-
 class StandardTransform(object):
     '''Standard Image Transforms, typically instantiated and provided to the DataSet class
 
@@ -138,8 +137,8 @@ def test4():
 
 def test5():
     from numpy import random
-    test_mask = random.randint(low=0, high=FungiImg.raw_table_rows(), size=200)
-    train_mask = list(set(range(FungiImg.raw_table_rows())) - set(test_mask))
+    test_mask = random.randint(low=0, high=RawData.N_ROWS.value, size=200)
+    train_mask = list(set(range(RawData.N_ROWS.value)) - set(test_mask))
     fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
                    iselector=test_mask)
     print (fds.img_toc.shape)
