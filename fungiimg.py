@@ -20,6 +20,8 @@ from torchvision import transforms
 class RawData(Enum):
     '''Number of rows in the image raw data'''
     N_ROWS = 15695
+    '''Number of rows in the image raw data'''
+    HEADERS = ['Kingdom', 'Division', 'Subdivision', 'Class', 'Order', 'Family', 'Genus', 'Species', 'InstanceIndex', 'ImageName']
 
 class FungiImg(Dataset):
     '''The Fungi Image Dataset Class
@@ -36,7 +38,6 @@ class FungiImg(Dataset):
     def __init__(self, csv_file, root_dir, selector=None, iselector=None, transform=None, label_keys=None):
 
         self.img_toc = pd.read_csv(csv_file, index_col=(0,1,2,3,4,5,6,7,8))
-        print (self.img_toc)
         self.root_dir = root_dir
         self.transform = transform
 
@@ -137,11 +138,14 @@ def test4():
 
 def test5():
     from numpy import random
-    test_mask = random.randint(low=0, high=RawData.N_ROWS.value, size=200)
-    train_mask = list(set(range(RawData.N_ROWS.value)) - set(test_mask))
-    fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
-                   iselector=test_mask)
-    print (fds.img_toc.shape)
-    print (fds.img_toc)
+    img_items = list(range(RawData.N_ROWS.value))
+    random.shuffle(img_items)
+    test_mask = img_items[:200]
+    train_mask = img_items[200:]
+    fds_test = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
+                        iselector=test_mask)
+    print (fds_test.img_toc.shape)
+    fds_train = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
+                         iselector=train_mask)
+    print (fds_train.img_toc.shape)
 
-test5()
