@@ -27,15 +27,21 @@ class FungiImg(Dataset):
             on a sample.
 
     '''
-    def __init__(self, csv_file, root_dir, selector=None, transform=None, label_keys=None):
+    RAW_TABLE_ROWS = 15695
+
+    def __init__(self, csv_file, root_dir, selector=None, iselector=None, transform=None, label_keys=None):
 
         self.img_toc = pd.read_csv(csv_file, index_col=(0,1,2,3,4,5,6,7,8))
+        print (self.img_toc)
         self.root_dir = root_dir
         self.transform = transform
 
-        # Discard data as if never present
+        # Discard data as if never present, like in creation of test and train data sets, either
+        # by row index or by an IndexSlice on the semantics of the MultiIndex
         if not selector is None:
             self.img_toc = self.img_toc.loc[selector]
+        elif not iselector is None:
+            self.img_toc = self.img_toc.iloc[iselector]
 
         # Assign labels to data. This does not control for disjoint definitions or completeness
         if not label_keys is None:
@@ -67,19 +73,26 @@ class FungiImg(Dataset):
         return image, label
 
     def _assign_label(self, l_keys):
+        '''Assign label to data based on family, genus, species selections'''
         category_slices = []
         for label_int, query_label in enumerate(l_keys):
             subset_label = self.img_toc.query(query_label)
 
             if len(subset_label) > 0:
                 subset_label.loc[:, 'ClassLabel'] = label_int
+                subset_label = subset_label.astype({'ClassLabel': 'int32'})
                 category_slices.append(subset_label)
 
         return category_slices
 
     @property
     def label_semantics(self):
+        '''The dictionary that maps '''
         return dict([(count, label_select) for count, label_select in enumerate(self.label_keys)])
+
+    @classmethod
+    def raw_table_rows(cls):
+        return cls.RAW_TABLE_ROWS
 
 
 class StandardTransform(object):
@@ -120,4 +133,16 @@ def test3():
                    label_keys=('Genus == "Cantharellus"', 'Genus == "Amanita"'))
     print (fds.label_semantics)
 
-test1()
+def test4():
+    print (FungiImg.raw_table_rows())
+
+def test5():
+    from numpy import random
+    test_mask = random.randint(low=0, high=FungiImg.raw_table_rows(), size=200)
+    train_mask = list(set(range(FungiImg.raw_table_rows())) - set(test_mask))
+    fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
+                   iselector=test_mask)
+    print (fds.img_toc.shape)
+    print (fds.img_toc)
+
+test5()
