@@ -41,6 +41,15 @@ class FungiImg(Dataset):
         self.root_dir = root_dir
         self.transform = transform
 
+        self.n_species = self._n_x('Species')
+        self.n_genus = self._n_x('Genus')
+        self.n_family = self._n_x('Family')
+        self.n_order = self._n_x('Order')
+        self.n_instance_species = self._n_instances_x('Species')
+        self.n_instance_genus = self._n_instances_x('Genus')
+        self.n_instance_family = self._n_instances_x('Family')
+        self.n_instance_order = self._n_instances_x('Order')
+
         # Discard data as if never present, like in creation of test and train data sets, either
         # by row index or by an IndexSlice on the semantics of the MultiIndex
         if not selector is None:
@@ -89,6 +98,14 @@ class FungiImg(Dataset):
                 category_slices.append(subset_label)
 
         return category_slices
+
+    def _n_x(self, x_label):
+        '''Compute number of distinct types of fungi at a given step in the hierarchy'''
+        return len(self.img_toc.groupby(x_label))
+
+    def _n_instances_x(self, x_label):
+        '''Compute number of images for each type of fungi at a given step in the hierarchy'''
+        return self.img_toc.groupby(x_label).count()[RawData.HEADERS.value[-1]].to_dict()
 
     @property
     def label_semantics(self):
