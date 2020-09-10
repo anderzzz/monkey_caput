@@ -15,7 +15,7 @@ from trainer import train_model
 
 def main(run_label, f_out,
          raw_csv_toc, raw_csv_root, transform_key, label_key, f_test,
-         loader_batch_size, num_workers,
+         loader_batch_size, num_workers, n_epochs,
          model_label, use_pretrained):
 
     # Print all run inputs to file
@@ -84,12 +84,12 @@ def main(run_label, f_out,
     # Train
     #
     is_inception = 'inception' in model_label
-    train_model(model, criterion, optimizer, exp_lr_scheduler, 1, dataloaders, dataset_sizes, is_inception)
+    train_model(model, criterion, optimizer, exp_lr_scheduler, n_epochs, dataloaders, dataset_sizes, is_inception)
 
 if __name__ == '__main__':
 
     main('Test Run', sys.stdout,
          '../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
          'standard_300', 'Kantarell vs Fluesvamp', 0.05,
-         4, 1,
+         4, 1, 20,
          'inception_v3', True)
