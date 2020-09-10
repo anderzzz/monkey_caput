@@ -41,15 +41,6 @@ class FungiImg(Dataset):
         self.root_dir = root_dir
         self.transform = transform
 
-        self.n_species = self._n_x('Species')
-        self.n_genus = self._n_x('Genus')
-        self.n_family = self._n_x('Family')
-        self.n_order = self._n_x('Order')
-        self.n_instance_species = self._n_instances_x('Species')
-        self.n_instance_genus = self._n_instances_x('Genus')
-        self.n_instance_family = self._n_instances_x('Family')
-        self.n_instance_order = self._n_instances_x('Order')
-
         # Discard data as if never present, like in creation of test and train data sets, either
         # by row index or by an IndexSlice on the semantics of the MultiIndex
         if not selector is None:
@@ -64,6 +55,15 @@ class FungiImg(Dataset):
             species = self.img_toc.index.unique(level='Species')
             self.label_keys = ['Species == "{}"'.format(sss) for sss in species]
         self.img_toc = pd.concat(self._assign_label(self.label_keys))
+
+        self.n_species = self._n_x('Species')
+        self.n_genus = self._n_x('Genus')
+        self.n_family = self._n_x('Family')
+        self.n_order = self._n_x('Order')
+        self.n_instance_species = self._n_instances_x('Species')
+        self.n_instance_genus = self._n_instances_x('Genus')
+        self.n_instance_family = self._n_instances_x('Family')
+        self.n_instance_order = self._n_instances_x('Order')
 
     def __len__(self):
         return len(self.img_toc)
