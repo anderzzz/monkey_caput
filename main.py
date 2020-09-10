@@ -58,6 +58,8 @@ def main(run_label, f_out,
                    'test' : DataLoader(dataset_test, batch_size=loader_batch_size,
                                        shuffle=False, num_workers=num_workers)}
     dataset_sizes = {'train' : len(dataset_train), 'test' : len(dataset_test)}
+    print (dataset_sizes)
+    print (dataset_train.label_semantics)
 
     #
     # Define the model
@@ -81,7 +83,8 @@ def main(run_label, f_out,
     #
     # Train
     #
-    train_model(model, criterion, optimizer, exp_lr_scheduler, 1, dataloaders, dataset_sizes)
+    is_inception = 'inception' in model_label
+    train_model(model, criterion, optimizer, exp_lr_scheduler, 1, dataloaders, dataset_sizes, is_inception)
 
 if __name__ == '__main__':
 

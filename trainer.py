@@ -10,7 +10,7 @@ import torch
 import time
 import copy
 
-def train_model(model, criterion, optimizer, scheduler, num_epochs, dataloaders, dataset_sizes):
+def train_model(model, criterion, optimizer, scheduler, num_epochs, dataloaders, dataset_sizes, is_inception):
     '''Train a model
 
     '''
@@ -45,9 +45,17 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs, dataloaders,
                 # forward
                 # track history if only in train
                 with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs)
+
+                    if is_inception and phase == 'train':
+                        outputs, aux_outputs = model(inputs)
+                        loss1 = criterion(outputs, labels)
+                        loss2 = criterion(aux_outputs, labels)
+                        loss = loss1 + 0.4 * loss2
+                    else:
+                        outputs = model(inputs)
+                        loss = criterion(outputs, labels)
+
                     _, preds = torch.max(outputs, 1)
-                    loss = criterion(outputs, labels)
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
@@ -57,6 +65,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs, dataloaders,
                 # statistics
                 running_loss += loss.item() * inputs.size(0)
                 running_corrects += torch.sum(preds == labels.data)
+
             if phase == 'train':
                 scheduler.step()
 
