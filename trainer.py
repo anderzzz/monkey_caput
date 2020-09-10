@@ -82,3 +82,4 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs, dataloaders,
     model.load_state_dict(best_model_wts)
 
     return model
+
