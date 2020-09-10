@@ -94,7 +94,7 @@ class FungiImg(Dataset):
 
             if len(subset_label) > 0:
                 subset_label.loc[:, 'ClassLabel'] = label_int
-                subset_label = subset_label.astype({'ClassLabel': 'int32'})
+                subset_label = subset_label.astype({'ClassLabel': 'int64'})
                 category_slices.append(subset_label)
 
         return category_slices
