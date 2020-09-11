@@ -5,6 +5,7 @@ import sys
 import time
 from numpy.random import shuffle
 
+import torch
 from torch.utils.data import DataLoader
 from torch import nn
 from torch import optim
@@ -16,7 +17,8 @@ from trainer import train_model
 def main(run_label, f_out,
          raw_csv_toc, raw_csv_root, transform_key, label_key, f_test,
          loader_batch_size, num_workers, n_epochs,
-         model_label, use_pretrained):
+         model_label, use_pretrained,
+         save_file_name):
 
     # Print all run inputs to file
     inp_args = locals()
@@ -30,7 +32,9 @@ def main(run_label, f_out,
     # Define the dataset and dataloader, train and test, using the string short-hand
     #
     if label_key == 'Kantarell vs Fluesvamp':
-        label_keys =('Genus == "Cantharellus"', 'Genus == "Amanita"')
+        label_keys = ('Family == "Cantharellaceae"', 'Family == "Amanitaceae"')
+    elif label_key == 'Champignon vs Fluesvamp':
+        label_keys = ('Genus == "Agaricus"', 'Genus == "Amanita"')
     elif label_key is None:
         label_keys = None
     else:
@@ -60,11 +64,15 @@ def main(run_label, f_out,
     dataset_sizes = {'train' : len(dataset_train), 'test' : len(dataset_test)}
     print (dataset_sizes)
     print (dataset_train.label_semantics)
+    print (dataset_train.n_instance_genus)
+    print (dataset_train.n_instance_family)
 
     #
     # Define the model
     #
     if label_key == 'Kantarell vs Fluesvamp':
+        num_classes = dataset_train.n_family
+    if label_key == 'Champignon vs Fluesvamp':
         num_classes = dataset_train.n_genus
     elif label_key is None:
         num_classes = dataset_train.n_species
@@ -84,12 +92,25 @@ def main(run_label, f_out,
     # Train
     #
     is_inception = 'inception' in model_label
-    train_model(model, criterion, optimizer, exp_lr_scheduler, n_epochs, dataloaders, dataset_sizes, is_inception)
+    best_model = train_model(model, criterion, optimizer, exp_lr_scheduler,
+                             n_epochs, dataloaders, dataset_sizes,
+                             is_inception)
+
+    with open(save_file_name, 'w') as f_out:
+        torch.save(best_model, f_out)
 
 if __name__ == '__main__':
 
-    main('Test Run', sys.stdout,
+#    main('Test Run', sys.stdout,
+#         '../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
+#         'standard_300', 'Kantarell vs Fluesvamp', 0.10,
+#         8, 1, 21,
+#         'inception_v3', True,
+#         'save_me.pkl')
+
+    main('Binary Tougher', sys.stdout,
          '../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
-         'standard_300', 'Kantarell vs Fluesvamp', 0.05,
-         4, 1, 20,
-         'inception_v3', True)
+         'standard_300', 'Champignon vs Fluesvamp', 0.10,
+         8, 1, 21,
+         'inception_v3', True,
+         'save_me_champ_flue.pkl')
