@@ -3,7 +3,7 @@
 '''
 import sys
 import time
-from numpy.random import shuffle
+from numpy.random import shuffle, seed
 
 import torch
 from torch.utils.data import DataLoader
@@ -14,11 +14,13 @@ from fungiimg import FungiImg, StandardTransform, RawData
 from model_init import initialize_model
 from trainer import train_model
 
-def main(run_label, f_out,
+def main(run_label, random_seed, f_out,
          raw_csv_toc, raw_csv_root, transform_key, label_key, f_test,
          loader_batch_size, num_workers, n_epochs,
          model_label, use_pretrained,
          save_file_name):
+
+    seed(random_seed)
 
     # Print all run inputs to file
     inp_args = locals()
@@ -96,28 +98,36 @@ def main(run_label, f_out,
                              n_epochs, dataloaders, dataset_sizes,
                              is_inception)
 
-    with open(save_file_name, 'w') as f_out:
-        torch.save(best_model, f_out)
+    torch.save({'model_state_dict': best_model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict()},
+                save_file_name + '.tar')
 
 if __name__ == '__main__':
 
-#    main('Test Run', sys.stdout,
+#    main('Test Run', 42, sys.stdout,
 #         '../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
 #         'standard_300', 'Kantarell vs Fluesvamp', 0.10,
 #         8, 1, 21,
 #         'inception_v3', True,
-#         'save_me.pkl')
+#         'save_kantarell_binary_inception')
 
-#    main('Binary Tougher', sys.stdout,
+#    main('Binary Tougher', 42, sys.stdout,
 #         '../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
 #         'standard_300', 'Champignon vs Fluesvamp', 0.10,
 #         8, 1, 21,
 #         'inception_v3', True,
-#         'save_me_champ_flue.pkl')
+#         'save_champ_binary_inception')
 
-    main('Test Run Alex', sys.stdout,
+    main('Test Run Alex', 42, sys.stdout,
          '../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
          'standard_300', 'Kantarell vs Fluesvamp', 0.10,
          8, 1, 21,
          'alexnet', True,
-         'save_me_alex.pkl')
+         'save_kantarell_binary_alex')
+
+    main('Test Run Alex', 42, sys.stdout,
+         '../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
+         'standard_300', 'Champignon vs Fluesvamp', 0.10,
+         8, 1, 21,
+         'alexnet', True,
+         'save_champ_binary_alex')
