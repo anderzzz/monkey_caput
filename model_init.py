@@ -1,4 +1,6 @@
-'''Model initializer script
+'''Model initializer script, lightly modified from https://pytorch.org/tutorials/beginner/finetuning_torchvision_models_tutorial.html
+
+By: Anders Ohrn, September 2020
 
 '''
 from torch import nn
@@ -20,7 +22,16 @@ def initialize_model(label, num_classes, use_pretrained=True):
         model.fc = nn.Linear(num_ftrs, num_classes)
         input_size = 299
 
+    elif label == 'alexnet':
+        # Load the Alexnet model
+        model = models.alexnet(pretrained=use_pretrained)
+
+        # Reconfigure the output layer. This builds on knowledge of what output layer is called
+        num_ftrs = model.classifier[6].in_features
+        model.classifier[6] = nn.Linear(num_ftrs, num_classes)
+        input_size = 224
+
     else:
-        raise ValueError('Model with label {} not defined'.format(self.label))
+        raise ValueError('Model with label {} not defined'.format(label))
 
     return model, input_size

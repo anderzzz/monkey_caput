@@ -70,9 +70,9 @@ def main(run_label, f_out,
     #
     # Define the model
     #
-    if label_key == 'Kantarell vs Fluesvamp':
+    if label_key.strip() == 'Kantarell vs Fluesvamp':
         num_classes = dataset_train.n_family
-    if label_key == 'Champignon vs Fluesvamp':
+    elif label_key.strip() == 'Champignon vs Fluesvamp':
         num_classes = dataset_train.n_genus
     elif label_key is None:
         num_classes = dataset_train.n_species
@@ -108,9 +108,16 @@ if __name__ == '__main__':
 #         'inception_v3', True,
 #         'save_me.pkl')
 
-    main('Binary Tougher', sys.stdout,
+#    main('Binary Tougher', sys.stdout,
+#         '../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
+#         'standard_300', 'Champignon vs Fluesvamp', 0.10,
+#         8, 1, 21,
+#         'inception_v3', True,
+#         'save_me_champ_flue.pkl')
+
+    main('Test Run Alex', sys.stdout,
          '../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
-         'standard_300', 'Champignon vs Fluesvamp', 0.10,
+         'standard_300', 'Kantarell vs Fluesvamp', 0.10,
          8, 1, 21,
-         'inception_v3', True,
-         'save_me_champ_flue.pkl')
+         'alexnet', True,
+         'save_me_alex.pkl')
