@@ -5,13 +5,15 @@ import sys
 import time
 import copy
 from numpy.random import shuffle, seed
+from PIL import Image
 
 import torch
+import torchvision
 from torch.utils.data import DataLoader, ConcatDataset
 from torch import nn
 from torch import optim
 
-from fungiimg import FungiImg, RawData, StandardTransform
+from fungiimg import FungiImg, RawData, StandardTransform, DataAugmentTransform
 from model_init import initialize_model
 
 class Runner(object):
@@ -24,7 +26,7 @@ class Runner(object):
                        transforms_aug_train=['random_resized_crop'],
                        label_key='Kantarell vs Fluesvamp',
                        f_test=0.10,
-                       loader_batch_size=8, num_workers=1,
+                       loader_batch_size=8, num_workers=0,
                        model_label='inception_v3', use_pretrained=True):
 
         self.inp_run_label = run_label
@@ -33,7 +35,10 @@ class Runner(object):
         self.inp_raw_csv_toc = raw_csv_toc
         self.inp_raw_csv_root = raw_csv_root
         self.inp_transform_imgs = transform_imgs
-        self.inp_transforms_aug_train = transforms_aug_train
+        if not transforms_aug_train is None:
+            self.inp_transforms_aug_train = transforms_aug_train
+        else:
+            self.inp_transforms_aug_train = []
         self.inp_label_key = label_key
         self.inp_f_test = f_test
         self.inp_loader_batch_size = loader_batch_size
@@ -72,12 +77,20 @@ class Runner(object):
                                       label_keys=label_keys)]
 
         for t_aug_label in self.inp_transforms_aug_train:
+            transform = DataAugmentTransform(t_aug_label, 300, to_tensor=True, normalize=False)
             dataset_train_x = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
-                                       iselector=train_ids, transform=t_aug_label,
+                                       iselector=train_ids, transform=transform,
                                        label_keys=label_keys)
             dataset_train_all.append(dataset_train_x)
 
         self.dataset_train = ConcatDataset(dataset_train_all)
+        print (self.dataset_train)
+        print (len(self.dataset_train))
+        print (self.dataset_train[4000][0])
+        torchvision.utils.save_image(self.dataset_train[4000][0], 'dummy.png')
+#        im = Image.fromarray(self.dataset_train[4000][0])
+#        im.save('dummy.png')
+        raise RuntimeError
 
         self.dataloaders = {'train' : DataLoader(self.dataset_train, batch_size=loader_batch_size,
                                             shuffle=True, num_workers=num_workers),
@@ -98,7 +111,7 @@ class Runner(object):
             raise ValueError('Unknown label_key: {}'.format(self.inp_label_key))
 
         self.model, self.input_size = initialize_model(self.inp_model_label, num_classes, self.inp_use_pretrained)
-        is_inception = 'inception' in self.inp_model_label
+        self.is_inception = 'inception' in self.inp_model_label
 
         #
         # Define criterion and optimizer and scheduler
@@ -203,7 +216,7 @@ class Runner(object):
                     'optimizer_state_dict': self.optimizer.state_dict()},
                    save_file_name + '.tar')
 
-    def _print_inp(self):
+    def print_inp(self):
         '''Output input parameters for easy reference in future
 
         '''
@@ -215,3 +228,18 @@ class Runner(object):
             if 'inp_' == attr_name[0:4]:
                 key = attr_name[4:]
                 print('{} : {}'.format(key, attr_value), file=self.inp_f_out)
+
+def test1():
+    r1 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=None)
+    r1.print_inp()
+    r1.train_model(1)
+    r1.save_model_state('test')
+
+def test2():
+    r2 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi')
+    r2.print_inp()
+    r2.train_model(1)
+    r2.save_model_state('test')
+
+test2()
