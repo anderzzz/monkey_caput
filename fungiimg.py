@@ -139,17 +139,19 @@ class DataAugmentTransform(object):
     def __init__(self, augmentation_label, min_dim=300, to_tensor=True,
                  normalize=True, norm_mean=[0.485, 0.456, 0.406], norm_std=[0.229, 0.224, 0.225]):
 
-        #self.basic_transform = StandardTransform(min_dim, to_tensor, normalize, norm_mean, norm_std)
+        self.basic_transform = StandardTransform(min_dim, to_tensor, normalize, norm_mean, norm_std)
 
         self.transforms = []
         self.transforms.append(transforms.ToPILImage())
         if augmentation_label == 'random_resized_crop':
-            self.transforms.append(transforms.RandomResizedCrop(min_dim))
+            self.transforms.append(transforms.RandomResizedCrop((300, 450), scale=(0.67,1.0)))
+        elif augmentation_label == 'random_rotation':
+            self.transforms.append(transforms.RandomRotation(180.0))
         self.transforms.append(transforms.ToTensor())
         self.t_aug = transforms.Compose(self.transforms)
 
     def __call__(self, img):
-        return self.t_aug(img)
+        return self.t_aug(self.basic_transform(img))
 
 def test1():
     fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi')

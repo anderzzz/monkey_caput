@@ -5,7 +5,6 @@ import sys
 import time
 import copy
 from numpy.random import shuffle, seed
-from PIL import Image
 
 import torch
 import torchvision
@@ -17,7 +16,8 @@ from fungiimg import FungiImg, RawData, StandardTransform, DataAugmentTransform
 from model_init import initialize_model
 
 class Runner(object):
-    '''Bla bla
+    '''Super class that defines dataset, model and optimizer for training and parameter tuning.
+    A helpful wrapper
 
     '''
     def __init__(self, run_label='Fungi Standard Run', random_seed=42, f_out=sys.stdout,
@@ -46,6 +46,8 @@ class Runner(object):
         self.inp_model_label = model_label
         self.inp_use_pretrained = use_pretrained
 
+        seed(self.inp_random_seed)
+
         #
         # Define the dataset and dataloader, train and test, using short-hand strings
         #
@@ -68,7 +70,6 @@ class Runner(object):
         n_test = int(RawData.N_ROWS.value * f_test)
         test_ids = all_ids[:n_test]
         train_ids = all_ids[n_test:]
-
         self.dataset_test = FungiImg(csv_file=self.inp_raw_csv_toc, root_dir=self.inp_raw_csv_root,
                                 iselector=test_ids, transform=transform,
                                 label_keys=label_keys)
@@ -84,13 +85,6 @@ class Runner(object):
             dataset_train_all.append(dataset_train_x)
 
         self.dataset_train = ConcatDataset(dataset_train_all)
-        print (self.dataset_train)
-        print (len(self.dataset_train))
-        print (self.dataset_train[4000][0])
-        torchvision.utils.save_image(self.dataset_train[4000][0], 'dummy.png')
-#        im = Image.fromarray(self.dataset_train[4000][0])
-#        im.save('dummy.png')
-        raise RuntimeError
 
         self.dataloaders = {'train' : DataLoader(self.dataset_train, batch_size=loader_batch_size,
                                             shuffle=True, num_workers=num_workers),
@@ -237,8 +231,11 @@ def test1():
     r1.save_model_state('test')
 
 def test2():
-    r2 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi')
+    r2 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=['random_resized_crop'], f_test=0.15,
+                model_label='alexnet', label_key='Champignon vs Fluesvamp')
     r2.print_inp()
+    print (r2.dataset_sizes)
     r2.train_model(1)
     r2.save_model_state('test')
 
