@@ -10,12 +10,12 @@ from torch.utils.data import DataLoader
 from torch import nn
 from torch import optim
 
-from fungiimg import FungiImg, StandardTransform, RawData
+from fungiimg import FungiImg, StandardTransform, DataAugmentTransform, RawData
 from model_init import initialize_model
 from trainer import train_model
 
 def main(run_label, random_seed, f_out,
-         raw_csv_toc, raw_csv_root, transform_key, label_key, f_test,
+         raw_csv_toc, raw_csv_root, transform_key, transform_key_aug, label_key, f_test,
          loader_batch_size, num_workers, n_epochs,
          model_label, use_pretrained,
          save_file_name):
@@ -47,15 +47,18 @@ def main(run_label, random_seed, f_out,
     else:
         raise ValueError('Unknown transform_key: {}'.format(transform_key))
 
+    if transform_key_aug == 'rand_resize_crop':
+        transform_aug = DataAugmentTransform()
+
     all_ids = list(range(RawData.N_ROWS.value))
     shuffle(all_ids)
     n_test = int(RawData.N_ROWS.value * f_test)
     test_ids = all_ids[:n_test]
     train_ids = all_ids[n_test:]
 
-    dataset_train = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
-                             iselector=train_ids, transform=transform,
-                             label_keys=label_keys)
+    dataset_train_raw = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
+                                 iselector=train_ids, transform=transform,
+                                 label_keys=label_keys)
     dataset_test = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
                             iselector=test_ids, transform=transform,
                             label_keys=label_keys)
