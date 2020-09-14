@@ -8,7 +8,7 @@ from numpy.random import shuffle, seed
 from sklearn.metrics import confusion_matrix
 
 import torch
-import torchvision
+from torchvision.utils import save_image
 from torch.utils.data import DataLoader, ConcatDataset
 from torch import nn
 from torch import optim
@@ -71,7 +71,6 @@ class Runner(object):
         n_test = int(RawData.N_ROWS.value * f_test)
         test_ids = all_ids[:n_test]
         train_ids = all_ids[n_test:]
-        print (test_ids)
         self.dataset_test = FungiImg(csv_file=self.inp_raw_csv_toc, root_dir=self.inp_raw_csv_root,
                                 iselector=test_ids, transform=transform,
                                 label_keys=label_keys)
@@ -288,9 +287,13 @@ def test3():
                 transforms_aug_train=[], f_test=0.15,
                 model_label='alexnet', label_key='Kantarell vs Fluesvamp')
     print (r3.dataset_sizes)
+    print (r3.dataset_test.label_semantics)
     r3.load_model_state('save_kant_binary_noaug_alex')
     matrix, mismatch = r3.confusion_matrix()
     print (matrix)
+    print (r3.dataset_test.img_toc.iloc[mismatch])
+    for mis_idx in mismatch:
+        save_image(r3.dataset_test[mis_idx][0], 'fail_{}.png'.format(mis_idx))
 
 def test4():
     r4 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
@@ -305,5 +308,5 @@ def test4():
 
 
 
-test4()
+#test4()
 test3()
