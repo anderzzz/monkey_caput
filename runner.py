@@ -5,6 +5,7 @@ import sys
 import time
 import copy
 from numpy.random import shuffle, seed
+from sklearn.metrics import confusion_matrix
 
 import torch
 import torchvision
@@ -70,6 +71,7 @@ class Runner(object):
         n_test = int(RawData.N_ROWS.value * f_test)
         test_ids = all_ids[:n_test]
         train_ids = all_ids[n_test:]
+        print (test_ids)
         self.dataset_test = FungiImg(csv_file=self.inp_raw_csv_toc, root_dir=self.inp_raw_csv_root,
                                 iselector=test_ids, transform=transform,
                                 label_keys=label_keys)
@@ -112,6 +114,7 @@ class Runner(object):
         #
         self.criterion = nn.CrossEntropyLoss()
         self.set_optim()
+        self.set_device()
 
     def set_optim(self, lr=0.001, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
         '''Set optimizer parameters'''
@@ -120,11 +123,14 @@ class Runner(object):
                                                           step_size=scheduler_step_size,
                                                           gamma=scheduler_gamma)
 
+    def set_device(self):
+        '''Set device'''
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     def train_model(self, n_epochs):
         '''Train the model
 
         '''
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         best_model_wts = copy.deepcopy(self.model.state_dict())
         best_acc = 0.0
 
@@ -146,8 +152,8 @@ class Runner(object):
 
                 # Iterate over data.
                 for inputs, labels in self.dataloaders[phase]:
-                    inputs = inputs.to(device)
-                    labels = labels.to(device)
+                    inputs = inputs.to(self.device)
+                    labels = labels.to(self.device)
 
                     # zero the parameter gradients
                     self.optimizer.zero_grad()
@@ -177,7 +183,7 @@ class Runner(object):
                     running_corrects += torch.sum(preds == labels.data)
 
                 if phase == 'train':
-                    self.scheduler.step()
+                    self.exp_lr_scheduler.step()
 
                 epoch_loss = running_loss / self.dataset_sizes[phase]
                 epoch_acc = running_corrects.double() / self.dataset_sizes[phase]
@@ -223,6 +229,36 @@ class Runner(object):
                 key = attr_name[4:]
                 print('{} : {}'.format(key, attr_value), file=self.inp_f_out)
 
+    def eval_model(self, phase='test', custom_dataloader=None):
+        self.model.eval()
+
+        if custom_dataloader is None:
+            dloader = self.dataloaders[phase]
+        else:
+            dloader = custom_dataloader
+
+        y_true = []
+        y_pred = []
+        for inputs, labels in dloader:
+            inputs = inputs.to(self.device)
+            labels = labels.to(self.device)
+            outputs = self.model(inputs)
+            _, preds = torch.max(outputs, 1)
+
+            y_true += labels.data.tolist()
+            y_pred += preds.data.tolist()
+
+        mismatch_idxs = [n for n, (yt, yp) in enumerate(zip(y_true, y_pred)) if yt != yp]
+
+        return y_true, y_pred, mismatch_idxs
+
+    def confusion_matrix(self, phase='test', custom_dataloader=None):
+        '''Create the confusion matrix for current model
+
+        '''
+        y_true, y_pred, mismatch_idxs = self.eval_model(phase, custom_dataloader)
+        return confusion_matrix(y_true, y_pred), mismatch_idxs
+
 def test1():
     r1 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                 transforms_aug_train=None)
@@ -236,7 +272,38 @@ def test2():
                 model_label='alexnet', label_key='Champignon vs Fluesvamp')
     r2.print_inp()
     print (r2.dataset_sizes)
-    r2.train_model(1)
-    r2.save_model_state('test')
+    r2.train_model(21)
+    r2.save_model_state('save_champ_binary_aug1_alex')
 
-test2()
+    r2 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=[], f_test=0.15,
+                model_label='alexnet', label_key='Champignon vs Fluesvamp')
+    r2.print_inp()
+    print (r2.dataset_sizes)
+    r2.train_model(21)
+    r2.save_model_state('save_champ_binary_noaug_alex')
+
+def test3():
+    r3 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=[], f_test=0.15,
+                model_label='alexnet', label_key='Kantarell vs Fluesvamp')
+    print (r3.dataset_sizes)
+    r3.load_model_state('save_kant_binary_noaug_alex')
+    matrix, mismatch = r3.confusion_matrix()
+    print (matrix)
+
+def test4():
+    r4 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=[], f_test=0.15,
+                model_label='alexnet', label_key='Kantarell vs Fluesvamp')
+    r4.print_inp()
+    print (r4.dataset_sizes)
+    r4.train_model(10)
+    r4.save_model_state('save_kant_binary_noaug_alex')
+    m1, m2 = r4.confusion_matrix()
+    print (m1)
+
+
+
+test4()
+test3()
