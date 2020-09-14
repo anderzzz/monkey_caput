@@ -19,7 +19,7 @@ def initialize_model(label, num_classes, use_pretrained=True):
         num_ftrs = model.AuxLogits.fc.in_features
         model.AuxLogits.fc = nn.Linear(num_ftrs, num_classes)
         num_ftrs = model.fc.in_features
-        model.fc = nn.Linear(num_ftrs, num_classes)
+        model.fc = nn.Sequential(nn.Linear(num_ftrs, num_classes), nn.Softmax(1))
         input_size = 299
 
     elif label == 'alexnet':
@@ -28,7 +28,7 @@ def initialize_model(label, num_classes, use_pretrained=True):
 
         # Reconfigure the output layer. This builds on knowledge of what output layer is called
         num_ftrs = model.classifier[6].in_features
-        model.classifier[6] = nn.Linear(num_ftrs, num_classes)
+        model.classifier[6] = nn.Sequential(nn.Linear(num_ftrs, num_classes), nn.Softmax(1))
         input_size = 224
 
     else:
