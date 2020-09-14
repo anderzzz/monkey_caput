@@ -4,6 +4,7 @@
 import sys
 import time
 import copy
+import numpy as np
 from numpy.random import shuffle, seed
 from sklearn.metrics import confusion_matrix
 
@@ -12,6 +13,14 @@ from torchvision.utils import save_image
 from torch.utils.data import DataLoader, ConcatDataset
 from torch import nn
 from torch import optim
+
+from captum.attr import IntegratedGradients
+from captum.attr import GradientShap
+from captum.attr import Occlusion
+from captum.attr import NoiseTunnel
+from captum.attr import visualization as viz
+
+from matplotlib.colors import LinearSegmentedColormap
 
 from fungiimg import FungiImg, RawData, StandardTransform, DataAugmentTransform
 from model_init import initialize_model
@@ -258,6 +267,62 @@ class Runner(object):
         y_true, y_pred, mismatch_idxs = self.eval_model(phase, custom_dataloader)
         return confusion_matrix(y_true, y_pred), mismatch_idxs
 
+    def attribution_idx_(self, idx, attr_type, phase='test', custom_dataloader=None):
+        '''Run attribution method on image
+
+        '''
+        self.model.eval()
+
+        if custom_dataloader is None:
+            dloader = self.dataloaders[phase]
+        else:
+            dloader = custom_dataloader
+
+        input, label = dloader.dataset[idx]
+        input = input.unsqueeze(0)
+        input = input.to(self.device)
+        output = self.model(input)
+        _, pred = torch.max(output, 1)
+
+        if attr_type == 'noise tunnel':
+            self._attr_noise_tunnel(input)
+        elif attr_type == 'occlusion':
+            self._attr_occlusion(input, pred)
+
+    def _attr_occlusion(self, input, pred_label_idx):
+
+        occlusion = Occlusion(self.model)
+        attributions_occ = occlusion.attribute(input,
+                                               strides=(3, 8, 8),
+                                               target=pred_label_idx,
+                                               sliding_window_shapes=(3, 15, 15),
+                                               baselines=0)
+        _ = viz.visualize_image_attr_multiple(
+            np.transpose(attributions_occ.squeeze().cpu().detach().numpy(), (1, 2, 0)),
+            np.transpose(input.squeeze().cpu().detach().numpy(), (1, 2, 0)),
+            ["original_image", "heat_map"],
+            ["all", "positive"],
+            show_colorbar=True,
+            outlier_perc=2,
+            )
+
+    def _attr_noise_tunnel(self, input):
+
+        attr_algo = NoiseTunnel(IntegratedGradients(self.model))
+        default_cmap = LinearSegmentedColormap.from_list('custom blue',
+                                                         [(0, '#ffffff'),
+                                                          (0.25, '#000000'),
+                                                          (1, '#000000')], N=256)
+        attr_ = attr_algo.attribute(input, n_samples=10, nt_type='smoothgrad_sq', target=pred)
+
+        _ = viz.visualize_image_attr_multiple(
+            np.transpose(attr_.squeeze().cpu().detach().numpy(), (1, 2, 0)),
+            np.transpose(input.squeeze().cpu().detach().numpy(), (1, 2, 0)),
+            ["original_image", "heat_map"],
+            ["all", "positive"],
+            cmap=default_cmap,
+            show_colorbar=True)
+
 def test1():
     r1 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                 transforms_aug_train=None)
@@ -291,6 +356,7 @@ def test3():
     r3.load_model_state('save_kant_binary_noaug_alex')
     matrix, mismatch = r3.confusion_matrix()
     print (matrix)
+    print (mismatch)
     print (r3.dataset_test.img_toc.iloc[mismatch])
     for mis_idx in mismatch:
         save_image(r3.dataset_test[mis_idx][0], 'fail_{}.png'.format(mis_idx))
@@ -301,12 +367,18 @@ def test4():
                 model_label='alexnet', label_key='Kantarell vs Fluesvamp')
     r4.print_inp()
     print (r4.dataset_sizes)
-    r4.train_model(10)
-    r4.save_model_state('save_kant_binary_noaug_alex')
+    r4.train_model(28)
+    r4.save_model_state('save_kant_binary_noaug_alex_28epoch')
     m1, m2 = r4.confusion_matrix()
     print (m1)
 
+def test5():
+     r5 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=[], f_test=0.15,
+                model_label='alexnet', label_key='Kantarell vs Fluesvamp')
+     r5.load_model_state('save_kant_binary_noaug_alex')
+     r5.attribution_idx_(30, 'occlusion')
 
-
-#test4()
-test3()
+test4()
+#test3()
+#test5()
