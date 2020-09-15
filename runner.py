@@ -97,9 +97,9 @@ class Runner(object):
         self.dataset_train = ConcatDataset(dataset_train_all)
 
         self.dataloaders = {'train' : DataLoader(self.dataset_train, batch_size=loader_batch_size,
-                                            shuffle=True, num_workers=num_workers),
-                       'test' : DataLoader(self.dataset_test, batch_size=loader_batch_size,
-                                           shuffle=False, num_workers=num_workers)}
+                                                 shuffle=True, num_workers=num_workers),
+                            'test' : DataLoader(self.dataset_test, batch_size=loader_batch_size,
+                                                shuffle=False, num_workers=num_workers)}
         self.dataset_sizes = {'train' : len(self.dataset_train), 'test' : len(self.dataset_test)}
 
         #
@@ -267,7 +267,8 @@ class Runner(object):
         y_true, y_pred, mismatch_idxs = self.eval_model(phase, custom_dataloader)
         return confusion_matrix(y_true, y_pred), mismatch_idxs
 
-    def attribution_idx_(self, idx, attr_type, phase='test', custom_dataloader=None):
+    def attribution_idx_(self, idx, attr_type, phase='test', custom_dataloader=None,
+                         occlusion_size=15):
         '''Run attribution method on image
 
         '''
@@ -285,17 +286,17 @@ class Runner(object):
         _, pred = torch.max(output, 1)
 
         if attr_type == 'noise tunnel':
-            self._attr_noise_tunnel(input)
+            self._attr_noise_tunnel(input, pred)
         elif attr_type == 'occlusion':
-            self._attr_occlusion(input, pred)
+            self._attr_occlusion(input, pred, occlusion_size)
 
-    def _attr_occlusion(self, input, pred_label_idx):
+    def _attr_occlusion(self, input, pred_label_idx, w_size=15):
 
         occlusion = Occlusion(self.model)
         attributions_occ = occlusion.attribute(input,
-                                               strides=(3, 8, 8),
+                                               strides=(3, int(w_size / 2), int(w_size / 2)),
                                                target=pred_label_idx,
-                                               sliding_window_shapes=(3, 15, 15),
+                                               sliding_window_shapes=(3, w_size, w_size),
                                                baselines=0)
         _ = viz.visualize_image_attr_multiple(
             np.transpose(attributions_occ.squeeze().cpu().detach().numpy(), (1, 2, 0)),
@@ -306,7 +307,7 @@ class Runner(object):
             outlier_perc=2,
             )
 
-    def _attr_noise_tunnel(self, input):
+    def _attr_noise_tunnel(self, input, pred):
 
         attr_algo = NoiseTunnel(IntegratedGradients(self.model))
         default_cmap = LinearSegmentedColormap.from_list('custom blue',
@@ -353,7 +354,7 @@ def test3():
                 model_label='alexnet', label_key='Kantarell vs Fluesvamp')
     print (r3.dataset_sizes)
     print (r3.dataset_test.label_semantics)
-    r3.load_model_state('save_kant_binary_noaug_alex')
+    r3.load_model_state('save_kant_binary_noaug_alex_21epoch')
     matrix, mismatch = r3.confusion_matrix()
     print (matrix)
     print (mismatch)
@@ -367,8 +368,8 @@ def test4():
                 model_label='alexnet', label_key='Kantarell vs Fluesvamp')
     r4.print_inp()
     print (r4.dataset_sizes)
-    r4.train_model(28)
-    r4.save_model_state('save_kant_binary_noaug_alex_28epoch')
+    r4.train_model(21)
+    r4.save_model_state('save_kant_binary_noaug_alex_21epoch')
     m1, m2 = r4.confusion_matrix()
     print (m1)
 
@@ -376,9 +377,36 @@ def test5():
      r5 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                 transforms_aug_train=[], f_test=0.15,
                 model_label='alexnet', label_key='Kantarell vs Fluesvamp')
-     r5.load_model_state('save_kant_binary_noaug_alex')
-     r5.attribution_idx_(30, 'occlusion')
+     r5.load_model_state('save_kant_binary_augresizecrop_alex_21epoch')
+     m1, m2 = r5.confusion_matrix()
+     print (m1)
+     print (m2)
+     print ([r5.dataset_test.img_toc.iloc[m2]])
+     r5.attribution_idx_(287, 'occlusion', occlusion_size=30)
 
-test4()
+def test6():
+    r6 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=['random_resized_crop'], f_test=0.15,
+                model_label='alexnet', label_key='Kantarell vs Fluesvamp')
+    r6.print_inp()
+    print (r6.dataset_sizes)
+    r6.train_model(21)
+    r6.save_model_state('save_kant_binary_augresizecrop_alex_21epoch')
+    m1, m2 = r6.confusion_matrix()
+    print (m1)
+
+def test7():
+    r7 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=['random_resized_crop'], f_test=0.15,
+                model_label='inception_v3', label_key='Kantarell vs Fluesvamp')
+    r7.print_inp()
+    print (r7.dataset_sizes)
+    r7.train_model(21)
+    r7.save_model_state('save_kant_binary_augresizecrop_inception_21epoch')
+    m1, m2 = r7.confusion_matrix()
+    print (m1)
+
+#test4()
 #test3()
-#test5()
+#test6()
+test7()
