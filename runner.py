@@ -37,7 +37,7 @@ class Runner(object):
                        label_key='Kantarell vs Fluesvamp',
                        f_test=0.10,
                        loader_batch_size=8, num_workers=0,
-                       model_label='inception_v3', use_pretrained=True):
+                       model_label='inception_v3', use_pretrained=True, feature_extract=False):
 
         self.inp_run_label = run_label
         self.inp_random_seed = random_seed
@@ -55,8 +55,15 @@ class Runner(object):
         self.inp_num_workers = num_workers
         self.inp_model_label = model_label
         self.inp_use_pretrained = use_pretrained
+        self.inp_feature_extract = feature_extract
 
+        #
+        # Set random seed and make run deterministic
+        #
         seed(self.inp_random_seed)
+        torch.manual_seed(self.inp_random_seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
         #
         # Define the dataset and dataloader, train and test, using short-hand strings
@@ -70,11 +77,17 @@ class Runner(object):
         else:
             raise ValueError('Unknown label_key: {}'.format(self.inp_label_key))
 
+        #
+        # Resize and normalize channels
+        #
         if self.inp_transform_imgs == 'standard_300':
-            transform = StandardTransform(300, to_tensor=True, normalize=False)
+            transform = StandardTransform(300, to_tensor=True, normalize=True)
         else:
             raise ValueError('Unknown transform_key: {}'.format(self.inp_transform_imgs))
 
+        #
+        # Construct split of data into train and test datasets
+        #
         all_ids = list(range(RawData.N_ROWS.value))
         shuffle(all_ids)
         n_test = int(RawData.N_ROWS.value * f_test)
@@ -87,15 +100,20 @@ class Runner(object):
                                       iselector=train_ids, transform=transform,
                                       label_keys=label_keys)]
 
+        #
+        # Augment training data set with a variety of transformed augmentation images
+        #
         for t_aug_label in self.inp_transforms_aug_train:
             transform = DataAugmentTransform(t_aug_label, 300, to_tensor=True, normalize=False)
             dataset_train_x = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
                                        iselector=train_ids, transform=transform,
                                        label_keys=label_keys)
             dataset_train_all.append(dataset_train_x)
-
         self.dataset_train = ConcatDataset(dataset_train_all)
 
+        #
+        # Create the data loaders for training and testing
+        #
         self.dataloaders = {'train' : DataLoader(self.dataset_train, batch_size=loader_batch_size,
                                                  shuffle=True, num_workers=num_workers),
                             'test' : DataLoader(self.dataset_test, batch_size=loader_batch_size,
@@ -114,7 +132,9 @@ class Runner(object):
         else:
             raise ValueError('Unknown label_key: {}'.format(self.inp_label_key))
 
-        self.model, self.input_size = initialize_model(self.inp_model_label, num_classes, self.inp_use_pretrained)
+        self.model, self.input_size = initialize_model(self.inp_model_label, num_classes,
+                                                       self.inp_use_pretrained,
+                                                       self.inp_feature_extract)
         self.is_inception = 'inception' in self.inp_model_label
 
         #
@@ -125,8 +145,13 @@ class Runner(object):
         self.set_device()
 
     def set_optim(self, lr=0.001, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
-        '''Set optimizer parameters'''
-        self.optimizer = optim.SGD(self.model.parameters(), lr=lr, momentum=momentum)
+        '''Set what and how to optimize'''
+        params_to_update = []
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                params_to_update.append(param)
+
+        self.optimizer = optim.SGD(params_to_update, lr=lr, momentum=momentum)
         self.exp_lr_scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                           step_size=scheduler_step_size,
                                                           gamma=scheduler_gamma)
@@ -136,13 +161,15 @@ class Runner(object):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     def train_model(self, n_epochs):
-        '''Train the model
+        '''Train the model a set number of epochs
 
         '''
         best_model_wts = copy.deepcopy(self.model.state_dict())
         best_acc = 0.0
 
+        #
         # Iterate over epochs
+        #
         since = time.time()
         for epoch in range(n_epochs):
             print('Epoch {}/{}'.format(epoch, n_epochs - 1), file=self.inp_f_out)
@@ -151,9 +178,9 @@ class Runner(object):
             # Each epoch has a training and validation phase
             for phase in ['train', 'test']:
                 if phase == 'train':
-                    self.model.train()  # Set model to training mode
+                    self.model.train()
                 else:
-                    self.model.eval()  # Set model to evaluate mode
+                    self.model.eval()
 
                 running_loss = 0.0
                 running_corrects = 0
@@ -398,7 +425,7 @@ def test6():
 def test7():
     r7 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                 transforms_aug_train=['random_resized_crop'], f_test=0.15,
-                model_label='inception_v3', label_key='Kantarell vs Fluesvamp')
+                model_label='resnext', label_key='Kantarell vs Fluesvamp', feature_extract=True)
     r7.print_inp()
     print (r7.dataset_sizes)
     r7.train_model(21)
@@ -406,7 +433,26 @@ def test7():
     m1, m2 = r7.confusion_matrix()
     print (m1)
 
+def test8():
+    r8 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=['random_resized_crop'], f_test=0.15,
+                model_label='alexnet', label_key='Kantarell vs Fluesvamp', feature_extract=True)
+    r8.print_inp()
+    r8.train_model(21)
+    r8.save_model_state('save_kant_binary_augresize_crop_alex_feature_21epoch')
+    m1, m2 = r8.confusion_matrix()
+    print (m1)
+    r8 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=['random_resized_crop'], f_test=0.15,
+                model_label='alexnet', label_key='Kantarell vs Fluesvamp', feature_extract=False)
+    r8.print_inp()
+    r8.train_model(21)
+    r8.save_model_state('save_kant_binary_augresize_crop_alex_21epoch')
+    m1, m2 = r8.confusion_matrix()
+    print (m1)
+
+
 #test4()
 #test3()
 #test6()
-test7()
+test8()
