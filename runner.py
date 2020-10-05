@@ -72,6 +72,10 @@ class Runner(object):
             label_keys = ('Family == "Cantharellaceae"', 'Family == "Amanitaceae"')
         elif self.inp_label_key == 'Champignon vs Fluesvamp':
             label_keys = ('Genus == "Agaricus"', 'Genus == "Amanita"')
+        elif self.inp_label_key == 'Kantarell Species':
+            label_keys = ('Species == "Almindelig Kantarel"', 'Species == "Bleg Kantarel"',
+                          'Species == "Liden Kantarel"', 'Species == "Trompetsvamp"',
+                          'Species == "Tragt Kantarel"', 'Species == "Gra Kantarel"')
         elif self.inp_label_key is None:
             label_keys = None
         else:
@@ -110,6 +114,7 @@ class Runner(object):
                                        label_keys=label_keys)
             dataset_train_all.append(dataset_train_x)
         self.dataset_train = ConcatDataset(dataset_train_all)
+        print (len(self.dataset_train), len(self.dataset_test))
 
         #
         # Create the data loaders for training and testing
@@ -127,6 +132,8 @@ class Runner(object):
             num_classes = self.dataset_test.n_family
         elif self.inp_label_key.strip() == 'Champignon vs Fluesvamp':
             num_classes = self.dataset_test.n_genus
+        elif self.inp_label_key.strip() == 'Kantarell Species':
+            num_classes = self.dataset_test.n_species
         elif self.inp_label_key is None:
             num_classes = self.dataset_test.n_species
         else:
@@ -425,34 +432,44 @@ def test6():
 def test7():
     r7 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                 transforms_aug_train=['random_resized_crop'], f_test=0.15,
-                model_label='resnext', label_key='Kantarell vs Fluesvamp', feature_extract=True)
+                model_label='resnext', label_key='Kantarell vs Fluesvamp', feature_extract=False)
     r7.print_inp()
     print (r7.dataset_sizes)
     r7.train_model(21)
-    r7.save_model_state('save_kant_binary_augresizecrop_inception_21epoch')
+    r7.save_model_state('save_kant_binary_augresizecrop_resnext_21epoch')
     m1, m2 = r7.confusion_matrix()
     print (m1)
 
 def test8():
     r8 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                 transforms_aug_train=['random_resized_crop'], f_test=0.15,
-                model_label='alexnet', label_key='Kantarell vs Fluesvamp', feature_extract=True)
+                model_label='inception_v3', label_key='Kantarell vs Fluesvamp', feature_extract=True)
     r8.print_inp()
     r8.train_model(21)
-    r8.save_model_state('save_kant_binary_augresize_crop_alex_feature_21epoch')
+    r8.save_model_state('save_kant_binary_augresize_crop_inception_feature_21epoch')
     m1, m2 = r8.confusion_matrix()
     print (m1)
     r8 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                 transforms_aug_train=['random_resized_crop'], f_test=0.15,
-                model_label='alexnet', label_key='Kantarell vs Fluesvamp', feature_extract=False)
+                model_label='inception_v3', label_key='Kantarell vs Fluesvamp', feature_extract=False)
     r8.print_inp()
     r8.train_model(21)
-    r8.save_model_state('save_kant_binary_augresize_crop_alex_21epoch')
+    r8.save_model_state('save_kant_binary_augresize_crop_inception_21epoch')
     m1, m2 = r8.confusion_matrix()
     print (m1)
 
+def test9():
+    r9 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=['random_resized_crop'], f_test=0.15,
+                model_label='inception_v3', label_key='Kantarell Species', feature_extract=False)
+    r9.print_inp()
+    r9.train_model(21)
+    r9.save_model_state('save_kant_species_augresize_crop_inception_21epoch')
+    m1, m2 = r9.confusion_matrix()
+    print (m1)
 
 #test4()
 #test3()
 #test6()
-test8()
+#test8()
+test9()
