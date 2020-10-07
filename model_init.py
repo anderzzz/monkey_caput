@@ -53,6 +53,16 @@ def initialize_model(label, num_classes, use_pretrained=True, feature_extracting
         model.classifier = nn.Linear(num_ftrs, num_classes)
         input_size = 224
 
+    elif label == 'resnet101':
+        # Load the ResNet101 model
+        model = models.resnet101(pretrained=use_pretrained)
+        set_parameter_requires_grad(model, feature_extracting)
+
+        # Reconfigure the output layer.
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, num_classes)
+        input_size = 224
+
     elif label == 'resnext':
         # Load the ResNext-101 model
         model = models.resnext101_32x8d(pretrained=use_pretrained)

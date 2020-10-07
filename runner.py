@@ -460,16 +460,26 @@ def test8():
 
 def test9():
     r9 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                transforms_aug_train=['random_resized_crop'], f_test=0.15,
+                transforms_aug_train=['random_resized_crop'], f_test=0.15, random_seed=9901,
                 model_label='inception_v3', label_key='Kantarell Species', feature_extract=False)
     r9.print_inp()
     r9.train_model(21)
-    r9.save_model_state('save_kant_species_augresize_crop_inception_21epoch')
+    r9.save_model_state('save_kant_species_augresize_crop_inception_21epoch_2')
     m1, m2 = r9.confusion_matrix()
+    print (m1)
+
+def test10():
+    r10 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transforms_aug_train=['random_resized_crop'], f_test=0.15, random_seed=9901,
+                model_label='resnet101', label_key='Kantarell Species', feature_extract=False)
+    r10.print_inp()
+    r10.train_model(21)
+    r10.save_model_state('save_kant_species_augresize_crop_resnet101_21epoch')
+    m1, m2 = r10.confusion_matrix()
     print (m1)
 
 #test4()
 #test3()
 #test6()
 #test8()
-test9()
+test10()
