@@ -133,19 +133,21 @@ class Decoder(nn.Module):
                                    nn.MaxUnpool2d(**pool_layer.kwargs)})
 
         self.norms = nn.ModuleDict(OrderedDict())
-        for k_layer in range(self.n_layers):
+        for k_layer in range(self.n_layers - 1):
             self.norms.update({'layer_{}'.format(k_layer):
                                nn.BatchNorm2d(num_features=conv_layers[k_layer].kwargs['out_channels'])})
 
     def forward(self, x, pool_indices):
 
         x_current = x
-        print (pool_indices.keys())
         for k_layer in range(self.n_layers):
             key = 'layer_{}'.format(k_layer)
             key_inverse = 'layer_{}'.format(self.n_layers - k_layer - 1)
             pool_index = pool_indices[key_inverse]
-            x_current = self.norms[key](self.convolutions[key](self.pools[key](x_current, pool_index)))
+            if key in self.norms:
+                x_current = self.norms[key](self.convolutions[key](self.pools[key](x_current, pool_index)))
+            else:
+                x_current = self.convolutions[key](self.pools[key](x_current, pool_index))
 
         return x_current
 
@@ -176,12 +178,8 @@ class AutoEncoder(nn.Module):
 
         y = self.encoder(x)
         f = self.feature_maker(y)
-        print ('A1', f.shape)
         y_ = self.feature_demaker(f)
-        print ('A2', y_.shape)
         x_ = self.decoder(y_, self.encoder.pool_indeces)
-        print (x_.shape)
-        raise RuntimeError
 
         return x_
 

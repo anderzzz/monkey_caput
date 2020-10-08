@@ -65,7 +65,8 @@ class RunnerAE(object):
         # Define the dataset and dataloader, train and test, using short-hand strings
         #
         if self.inp_label_key == 'Kantarell and Fluesvamp':
-            label_keys = ('Family == "Cantharellaceae"', 'Family == "Amanitaceae"')
+            #label_keys = ('Family == "Cantharellaceae"', 'Family == "Amanitaceae"')
+            label_keys = ('Family == "Cantharellaceae"',)
         elif self.inp_label_key is None:
             label_keys = None
         else:
@@ -124,11 +125,11 @@ class RunnerAE(object):
         #
         # Define criterion and optimizer and scheduler
         #
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.MSELoss()
         self.set_optim()
         self.set_device()
 
-    def set_optim(self, lr=0.001, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
+    def set_optim(self, lr=0.1, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
         '''Set what and how to optimize'''
         params_to_update = []
         for name, param in self.model.named_parameters():
@@ -149,7 +150,7 @@ class RunnerAE(object):
 
         '''
         best_model_wts = copy.deepcopy(self.model.state_dict())
-        best_acc = 0.0
+        best_mse = 1e20
 
         #
         # Iterate over epochs
@@ -159,68 +160,31 @@ class RunnerAE(object):
             print('Epoch {}/{}'.format(epoch, n_epochs - 1), file=self.inp_f_out)
             print('-' * 10, file=self.inp_f_out)
 
-            # Each epoch has a training and validation phase
-            for phase in ['train', 'test']:
-                if phase == 'train':
-                    self.model.train()
-                else:
-                    self.model.eval()
+            self.model.train()
+            running_loss = 0.0
 
-                running_loss = 0.0
-                running_corrects = 0
+            # Iterate over data.
+            for inputs, label in self.dataloader:
+                inputs = inputs.to(self.device)
 
-                # Iterate over data.
-                for inputs, labels in self.dataloaders[phase]:
-                    inputs = inputs.to(self.device)
-                    labels = labels.to(self.device)
+                # zero the parameter gradients
+                self.optimizer.zero_grad()
 
-                    # zero the parameter gradients
-                    self.optimizer.zero_grad()
+                # forward
+                outputs = self.model(inputs)
+                loss = self.criterion(outputs, inputs)
 
-                    # forward
-                    # track history if only in train
-                    with torch.set_grad_enabled(phase == 'train'):
+                loss.backward()
+                self.optimizer.step()
+                self.exp_lr_scheduler.step()
 
-                        if self.is_inception and phase == 'train':
-                            outputs, aux_outputs = self.model(inputs)
-                            loss1 = self.criterion(outputs, labels)
-                            loss2 = self.criterion(aux_outputs, labels)
-                            loss = loss1 + 0.4 * loss2
-                        else:
-                            outputs = self.model(inputs)
-                            loss = self.criterion(outputs, labels)
+                running_loss += loss.item()
 
-                        _, preds = torch.max(outputs, 1)
-
-                        # backward + optimize only if in training phase
-                        if phase == 'train':
-                            loss.backward()
-                            self.optimizer.step()
-
-                    # statistics
-                    running_loss += loss.item() * inputs.size(0)
-                    running_corrects += torch.sum(preds == labels.data)
-
-                if phase == 'train':
-                    self.exp_lr_scheduler.step()
-
-                epoch_loss = running_loss / self.dataset_sizes[phase]
-                epoch_acc = running_corrects.double() / self.dataset_sizes[phase]
-
-                print('{} Loss: {:.4f} Acc: {:.4f}'.format(
-                    phase, epoch_loss, epoch_acc), file=self.inp_f_out)
-
-                # deep copy the model
-                if phase == 'test' and epoch_acc > best_acc:
-                    best_acc = epoch_acc
-                    best_model_wts = copy.deepcopy(self.model.state_dict())
-
+            running_loss = running_loss / self.dataset_size
+            print('MSE: {:.4f}'.format(running_loss), file=self.inp_f_out)
             print('', file=self.inp_f_out)
-
-        time_elapsed = time.time() - since
-        print('Training complete in {:.0f}m {:.0f}s'.format(
-            time_elapsed // 60, time_elapsed % 60), file=self.inp_f_out)
-        print('Best val Acc: {:4f}'.format(best_acc), file=self.inp_f_out)
+            if running_loss < best_mse:
+                best_model_wts = copy.deepcopy(self.model.state_dict())
 
         # load best model weights
         self.model.load_state_dict(best_model_wts)
@@ -271,78 +235,11 @@ class RunnerAE(object):
 
         return y_true, y_pred, mismatch_idxs
 
-    def confusion_matrix(self, phase='test', custom_dataloader=None):
-        '''Create the confusion matrix for current model
-
-        '''
-        y_true, y_pred, mismatch_idxs = self.eval_model(phase, custom_dataloader)
-        return confusion_matrix(y_true, y_pred), mismatch_idxs
-
-    def attribution_idx_(self, idx, attr_type, phase='test', custom_dataloader=None,
-                         occlusion_size=15):
-        '''Run attribution method on image
-
-        '''
-        self.model.eval()
-
-        if custom_dataloader is None:
-            dloader = self.dataloaders[phase]
-        else:
-            dloader = custom_dataloader
-
-        input, label = dloader.dataset[idx]
-        input = input.unsqueeze(0)
-        input = input.to(self.device)
-        output = self.model(input)
-        _, pred = torch.max(output, 1)
-
-        if attr_type == 'noise tunnel':
-            self._attr_noise_tunnel(input, pred)
-        elif attr_type == 'occlusion':
-            self._attr_occlusion(input, pred, occlusion_size)
-
-    def _attr_occlusion(self, input, pred_label_idx, w_size=15):
-
-        occlusion = Occlusion(self.model)
-        attributions_occ = occlusion.attribute(input,
-                                               strides=(3, int(w_size / 2), int(w_size / 2)),
-                                               target=pred_label_idx,
-                                               sliding_window_shapes=(3, w_size, w_size),
-                                               baselines=0)
-        _ = viz.visualize_image_attr_multiple(
-            np.transpose(attributions_occ.squeeze().cpu().detach().numpy(), (1, 2, 0)),
-            np.transpose(input.squeeze().cpu().detach().numpy(), (1, 2, 0)),
-            ["original_image", "heat_map"],
-            ["all", "positive"],
-            show_colorbar=True,
-            outlier_perc=2,
-            )
-
-    def _attr_noise_tunnel(self, input, pred):
-
-        attr_algo = NoiseTunnel(IntegratedGradients(self.model))
-        default_cmap = LinearSegmentedColormap.from_list('custom blue',
-                                                         [(0, '#ffffff'),
-                                                          (0.25, '#000000'),
-                                                          (1, '#000000')], N=256)
-        attr_ = attr_algo.attribute(input, n_samples=10, nt_type='smoothgrad_sq', target=pred)
-
-        _ = viz.visualize_image_attr_multiple(
-            np.transpose(attr_.squeeze().cpu().detach().numpy(), (1, 2, 0)),
-            np.transpose(input.squeeze().cpu().detach().numpy(), (1, 2, 0)),
-            ["original_image", "heat_map"],
-            ["all", "positive"],
-            cmap=default_cmap,
-            show_colorbar=True)
-
 def test1():
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  transforms_aug_train=None)
-    xx = next(iter(r1.dataloader))
-    r1.model.forward(xx[0])
-    raise RuntimeError
+                  transforms_aug_train=None, loader_batch_size=32)
     r1.print_inp()
-    r1.train_model(1)
+    r1.train_model(28)
     r1.save_model_state('test')
 
 test1()
