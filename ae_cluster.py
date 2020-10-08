@@ -7,180 +7,164 @@ from collections import OrderedDict
 from copy import deepcopy
 import math
 
-def size_progression(windows, h_start, w_start):
+def size_progression(windows, h_start, w_start, transpose=False):
 
     h_current = h_start
     w_current = w_start
-    ret = [(h_current, w_current)]
+    ret = ['height:{}; width:{}'.format(h_current, w_current)]
     for window in windows:
-        edge_issue = window.edge_effect(h_current, w_current)
-        h_current, w_current = window.output_size(h_current, w_current)
-        ret.append((h_current, w_current, edge_issue))
+        for operator in window.operators:
+            if isinstance(operator, _Window2DParams):
+                edge_issue = operator.edge_effect(h_current, w_current, transpose)
+                h_current, w_current = operator.output_size(h_current, w_current, transpose)
+                ret.append('height:{}; width:{}; edge issue:{}'.format(h_current, w_current, edge_issue))
 
     return ret
 
 class _Window2DParams(object):
 
-    def __init__(self, kernel_size, stride, dilation):
+    def __init__(self, kernel_size, stride):
 
         if not isinstance(kernel_size, int):
             raise ValueError('Only integer values allowed for `kernel_size`')
         if not isinstance(stride, int):
             raise ValueError('Only integer values allowed for `stride`')
-        if not isinstance(dilation, int):
-            raise ValueError('Only integer values allowed for `dilation`')
 
         self.kernel_size = kernel_size
         self.stride = stride
-        self.dilation = dilation
 
         self.kwargs = {'kernel_size' : self.kernel_size,
-                       'stride' : self.stride,
-                       'dilation' : self.dilation}
+                       'stride' : self.stride}
 
-    def _size_change_(self, x):
-        return (x - self.dilation * (self.kernel_size - 1) - 1) / self.stride + 1
+    def _size_change_(self, x, transpose=False):
+        if transpose:
+            return (x - 1) * self.stride + (self.kernel_size - 1) + 1
+        else:
+            return (x - (self.kernel_size - 1) - 1) / self.stride + 1
 
-    def output_size(self, h_in, w_in):
-        return math.floor(self._size_change_(h_in)), math.floor(self._size_change_(w_in))
+    def output_size(self, h_in, w_in, transpose=False):
+        return math.floor(self._size_change_(h_in, transpose)), math.floor(self._size_change_(w_in, transpose))
 
-    def edge_effect(self, h_in, w_in):
-        h_out, w_out = self.output_size(h_in, w_in)
-        return (self._size_change_(h_in) - h_out > 1e-5) or (self._size_change_(w_in) - w_out > 1e-5)
-
+    def edge_effect(self, h_in, w_in, transpose=False):
+        h_out, w_out = self.output_size(h_in, w_in, transpose)
+        return (self._size_change_(h_in, transpose) - h_out > 1e-5) or (self._size_change_(w_in, transpose) - w_out > 1e-5)
 
 class Conv2dParams(_Window2DParams):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, dilation):
-        super(Conv2dParams, self).__init__(kernel_size, stride, dilation)
+    def __init__(self, in_channels, out_channels, kernel_size, stride):
+        super(Conv2dParams, self).__init__(kernel_size, stride)
         self.kwargs.update({'in_channels' : in_channels, 'out_channels' : out_channels})
 
-    def invert(self):
-        in_channel_current = self.kwargs['in_channels']
-        out_channel_current = self.kwargs['out_channels']
-        self.kwargs.update({'in_channels' : out_channel_current, 'out_channels' : in_channel_current})
-        return self
-
 class Pool2dParams(_Window2DParams):
-    def __init__(self, kernel_size, stride, dilation):
-        super(Pool2dParams, self).__init__(kernel_size, stride, dilation)
+    def __init__(self, kernel_size, stride):
+        super(Pool2dParams, self).__init__(kernel_size, stride)
 
-    def invert(self):
-        del self.kwargs['dilation']
-        return self
+class LayerParams(object):
+    def __init__(self, layer_name, operators):
+        self.name = layer_name
+        self.operators = operators
 
-class Encoder(nn.Module):
+class Xcoder(nn.Module):
 
-    def __init__(self, conv_layers, pool_layers):
-        super(Encoder, self).__init__()
+    def __init__(self, layers, convolution_module=None, pool_module=None, pool_module_kwarg={}):
+        super(Xcoder, self).__init__()
 
-        assert len(conv_layers) == len(pool_layers)
-        self.n_layers = len(conv_layers)
-        self.pool_indeces = {}
+        self.n_layers = len(layers)
 
-        self.convolutions = nn.ModuleDict(OrderedDict())
-        for k_layer, conv_layer in enumerate(conv_layers):
-            if not isinstance(conv_layer, Conv2dParams):
-                raise ValueError('Encoder convolution layer not given instance of Conv2dParams')
+        self.layer_sequence = nn.ModuleDict(OrderedDict())
+        for k_layer, layer in enumerate(layers):
+            n_output_channels = None
+            modules = nn.ModuleList([])
+            for operator in layer.operators:
+                if isinstance(operator, Conv2dParams):
+                    modules.append(convolution_module(**operator.kwargs))
+                    n_output_channels = operator.kwargs['out_channels']
 
-            self.convolutions.update({'layer_{}'.format(k_layer) :
-                                      nn.Conv2d(**conv_layer.kwargs)})
+                elif isinstance(operator, Pool2dParams):
+                    kwargs = operator.kwargs
+                    kwargs.update(pool_module_kwarg)
+                    modules.append(pool_module(**kwargs))
 
-        self.pools = nn.ModuleDict(OrderedDict())
-        for k_layer, pool_layer in enumerate(pool_layers):
-            if not isinstance(pool_layer, Pool2dParams):
-                raise ValueError('Encoder convolution layer not given instance of Pool2dParams')
+                elif operator == 'relu':
+                    modules.append(nn.ReLU())
 
-            self.pools.update({'layer_{}'.format(k_layer) :
-                               nn.MaxPool2d(return_indices=True, **pool_layer.kwargs)})
+                elif operator == 'sigmoid':
+                    modules.append(nn.Sigmoid())
 
-        self.norms = nn.ModuleDict(OrderedDict())
-        for k_layer in range(self.n_layers):
-            self.norms.update({'layer_{}'.format(k_layer) :
-                               nn.BatchNorm2d(num_features=conv_layers[k_layer].kwargs['out_channels'])})
+                elif operator == 'batch_norm':
+                    if n_output_channels is None:
+                        raise RuntimeError('A Batch Normalization must be preceded by a convolution')
+                    modules.append(nn.BatchNorm2d(n_output_channels))
+
+                else:
+                    raise RuntimeError('Unknown operator specification encountered: {}'.format(operator))
+
+            self.layer_sequence.update({self.layer_key(k_layer) : modules})
+
+    def layer_key(self, n):
+        return 'layer_{}'.format(n)
+
+class Encoder(Xcoder):
+
+    def __init__(self, layers_params):
+        super(Encoder, self).__init__(layers_params,
+                                      convolution_module=nn.Conv2d,
+                                      pool_module=nn.MaxPool2d,
+                                      pool_module_kwarg={'return_indices' : True})
+
+        self.pool_indeces = []
 
     def forward(self, x):
 
         x_current = x
         for k_layer in range(self.n_layers):
-            key = 'layer_{}'.format(k_layer)
-            x_current, indices = self.pools[key](self.norms[key](self.convolutions[key](x_current)))
-            self.pool_indeces['layer_{}'.format(k_layer)] = indices
+            layer_modules = self.layer_sequence[self.layer_key(k_layer)]
+            for module in layer_modules:
+                out_current = module(x_current)
+                if isinstance(out_current, tuple) and len(out_current) == 2:
+                    x_current = out_current[0]
+                    self.pool_indeces.append(out_current[1])
+                else:
+                    x_current = out_current
 
         return x_current
 
-class Decoder(nn.Module):
+class Decoder(Xcoder):
 
-    def __init__(self, conv_layers, pool_layers):
-        super(Decoder, self).__init__()
+    def __init__(self, layers_params):
+        super(Decoder, self).__init__(layers_params,
+                                      convolution_module=nn.ConvTranspose2d,
+                                      pool_module=nn.MaxUnpool2d)
 
-        assert len(conv_layers) == len(pool_layers)
-        self.n_layers = len(conv_layers)
-
-        self.convolutions = nn.ModuleDict(OrderedDict())
-        for k_layer, conv_layer in enumerate(conv_layers):
-            if not isinstance(conv_layer, Conv2dParams):
-                raise ValueError('Encoder convolution layer not given instance of Conv2dParams')
-
-            self.convolutions.update({'layer_{}'.format(k_layer):
-                                          nn.ConvTranspose2d(**conv_layer.kwargs)})
-
-        self.pools = nn.ModuleDict(OrderedDict())
-        for k_layer, pool_layer in enumerate(pool_layers):
-            if not isinstance(pool_layer, Pool2dParams):
-                raise ValueError('Encoder convolution layer not given instance of Pool2dParams')
-
-            self.pools.update({'layer_{}'.format(k_layer):
-                                   nn.MaxUnpool2d(**pool_layer.kwargs)})
-
-        self.norms = nn.ModuleDict(OrderedDict())
-        for k_layer in range(self.n_layers - 1):
-            self.norms.update({'layer_{}'.format(k_layer):
-                               nn.BatchNorm2d(num_features=conv_layers[k_layer].kwargs['out_channels'])})
+        print (self.layer_sequence)
 
     def forward(self, x, pool_indices):
 
         x_current = x
         for k_layer in range(self.n_layers):
-            key = 'layer_{}'.format(k_layer)
-            key_inverse = 'layer_{}'.format(self.n_layers - k_layer - 1)
-            pool_index = pool_indices[key_inverse]
-            if key in self.norms:
-                x_current = self.norms[key](self.convolutions[key](self.pools[key](x_current, pool_index)))
-            else:
-                x_current = self.convolutions[key](self.pools[key](x_current, pool_index))
+            layer_modules = self.layer_sequence[self.layer_key(k_layer)]
+            for module in layer_modules:
+                if isinstance(module, nn.MaxUnpool2d):
+                    x_current = module(x_current, pool_indices.pop(-1))
+                else:
+                    x_current = module(x_current)
 
         return x_current
 
 class AutoEncoder(nn.Module):
 
-    def __init__(self, conv_layers, pool_layers, feature_maker, feature_demaker):
+    def __init__(self, encoder_layers, decoder_layers):
         super(AutoEncoder, self).__init__()
 
-        self.encoder = Encoder(conv_layers, pool_layers)
-
-        conv_layers_invert = self._invert(conv_layers)
-        pool_layers_invert = self._invert(pool_layers)
-        self.decoder = Decoder(conv_layers_invert, pool_layers_invert)
-
-        self.feature_maker = feature_maker
-        self.feature_demaker = feature_demaker
-
-    def _invert(self, ops):
-
-        ops_inverted = []
-        for op in reversed(ops):
-            op_new = deepcopy(op)
-            ops_inverted.append(op_new.invert())
-
-        return ops_inverted
+        self.encoder = Encoder(encoder_layers)
+        self.decoder = Decoder(decoder_layers)
 
     def forward(self, x):
+        return self.decode(self.encode(x))
 
-        y = self.encoder(x)
-        f = self.feature_maker(y)
-        y_ = self.feature_demaker(f)
-        x_ = self.decoder(y_, self.encoder.pool_indeces)
+    def encode(self, x):
+        return self.encoder(x)
 
-        return x_
+    def decode(self, y):
+        return self.decoder(y, self.encoder.pool_indeces)
 
 

@@ -24,7 +24,7 @@ from matplotlib.colors import LinearSegmentedColormap
 
 from fungiimg import FungiImg, RawData, StandardTransform, DataAugmentTransform
 from model_init import initialize_model
-from ae_cluster import AutoEncoder, Conv2dParams, Pool2dParams, size_progression
+from ae_cluster import AutoEncoder, Conv2dParams, Pool2dParams, LayerParams, size_progression
 
 class RunnerAE(object):
     '''Bla bla
@@ -107,20 +107,29 @@ class RunnerAE(object):
         #
         # Define the model
         #
-        convs = [Conv2dParams(3, 16, 6, 2, 1),
-                 Conv2dParams(16, 32, 5, 1, 1),
-                 Conv2dParams(32, 128, 5, 2, 1),
-                 Conv2dParams(128, 256, 3, 1, 1)]
-        pools = [Pool2dParams(2, 2, 1),
-                 Pool2dParams(2, 2, 1),
-                 Pool2dParams(2, 2, 1),
-                 Pool2dParams(2, 2, 1)]
-        print (size_progression([convs[0], pools[0], convs[1], pools[1],
-                                 convs[2], pools[2], convs[3], pools[3]],
-                                 300, 300))
-        feature_maker = torch.nn.Conv2d(in_channels=256, out_channels=1024, kernel_size=3, stride=1)
-        feature_demaker = torch.nn.ConvTranspose2d(in_channels=1024, out_channels=256, kernel_size=3, stride=1)
-        self.model = AutoEncoder(convs, pools, feature_maker, feature_demaker)
+        layer_params_e = [LayerParams('nearest input image',
+                                      (Conv2dParams(3, 8, 6, 2), 'relu', 'batch_norm', Pool2dParams(2, 2))),
+                          LayerParams('second layer',
+                                      (Conv2dParams(8, 16, 5, 1), 'relu', 'batch_norm', Pool2dParams(2, 2))),
+                          LayerParams('third layer',
+                                      (Conv2dParams(16, 32, 5, 2), 'relu', 'batch_norm', Pool2dParams(2, 2))),
+                          LayerParams('fourth layer',
+                                      (Conv2dParams(32, 64, 3, 1), 'relu', 'batch_norm', Pool2dParams(2, 2))),
+                          LayerParams('code maker',
+                                      (Conv2dParams(64, 128, 3, 1), 'relu'))]
+        print (size_progression(layer_params_e, 300, 300))
+        layer_params_d = [LayerParams('nearest input code',
+                                      (Conv2dParams(128, 64, 3, 1), 'relu', 'batch_norm', Pool2dParams(2, 2))),
+                          LayerParams('second layer',
+                                      (Conv2dParams(64, 32, 3, 1), 'relu', 'batch_norm', Pool2dParams(2, 2))),
+                          LayerParams('third layer',
+                                      (Conv2dParams(32, 16, 5, 2), 'relu', 'batch_norm', Pool2dParams(2, 2))),
+                          LayerParams('fourth layer',
+                                      (Conv2dParams(16, 8, 5, 1), 'relu', 'batch_norm', Pool2dParams(2, 2))),
+                          LayerParams('output decode layer',
+                                      (Conv2dParams(8, 3, 6, 2), 'sigmoid'))]
+        print (size_progression(layer_params_d, 1, 1, transpose=True))
+        self.model = AutoEncoder(layer_params_e, layer_params_d)
 
         #
         # Define criterion and optimizer and scheduler
@@ -129,7 +138,7 @@ class RunnerAE(object):
         self.set_optim()
         self.set_device()
 
-    def set_optim(self, lr=0.1, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
+    def set_optim(self, lr=1.0, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
         '''Set what and how to optimize'''
         params_to_update = []
         for name, param in self.model.named_parameters():
@@ -178,7 +187,7 @@ class RunnerAE(object):
                 self.optimizer.step()
                 self.exp_lr_scheduler.step()
 
-                running_loss += loss.item()
+                running_loss += loss.item() * inputs.size(0)
 
             running_loss = running_loss / self.dataset_size
             print('MSE: {:.4f}'.format(running_loss), file=self.inp_f_out)
