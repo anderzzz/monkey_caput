@@ -4,6 +4,7 @@
 from torch import nn
 
 from collections import OrderedDict
+from copy import deepcopy
 
 class _Window2DParams(object):
 
@@ -39,6 +40,7 @@ class Conv2dParams(_Window2DParams):
         in_channel_current = self.kwargs['in_channels']
         out_channel_current = self.kwargs['out_channels']
         self.kwargs.update({'in_channels' : out_channel_current, 'out_channels' : in_channel_current})
+        return self
 
 class Pool2dParams(_Window2DParams):
     def __init__(self, kernel_size, stride, dilation):
@@ -61,6 +63,7 @@ class Encoder(nn.Module):
             self.convolutions.update({'layer_{}'.format(k_layer) :
                                       nn.Conv2d(**conv_layer.kwargs)})
 
+        self.pools = nn.ModuleDict(OrderedDict())
         for k_layer, pool_layer in enumerate(pool_layers):
             if not isinstance(pool_layer, Pool2dParams):
                 raise ValueError('Encoder convolution layer not given instance of Pool2dParams')
@@ -71,10 +74,13 @@ class Encoder(nn.Module):
     def forward(self, x):
 
         x_current = x
+        print ('AA2', x.shape)
         for k_layer in range(self.n_layers):
             conv = self.convolutions['layer_{}'.format(k_layer)]
-            pool = self.pool['layer_{}'.format(k_layer)]
+            pool = self.pools['layer_{}'.format(k_layer)]
             x_current, indices = pool(conv(x_current))
+            print ('AA3', x_current.shape)
+            raise RuntimeError
 
             self.pool_indeces['layer_{}'.format(k_layer)] = indices
 
@@ -96,6 +102,7 @@ class Decoder(nn.Module):
             self.convolutions.update({'layer_{}'.format(k_layer):
                                           nn.ConvTranspose2d(**conv_layer.kwargs)})
 
+        self.pools = nn.ModuleDict(OrderedDict())
         for k_layer, pool_layer in enumerate(pool_layers):
             if not isinstance(pool_layer, Pool2dParams):
                 raise ValueError('Encoder convolution layer not given instance of Pool2dParams')
@@ -113,12 +120,16 @@ class AutoEncoder(nn.Module):
 
         self.encoder = Encoder(conv_layers, pool_layers)
 
-        conv_layers_invert = reversed([x.invert() for x in conv_layers])
-        pool_layers_invert = reversed(pool_layers)
+        conv_layers_invert = []
+        for conv_layer in reversed(conv_layers):
+            c_new = deepcopy(conv_layer)
+            conv_layers_invert.append(c_new.invert())
+        pool_layers_invert = list(reversed(pool_layers))
         self.decoder = Decoder(conv_layers_invert, pool_layers_invert)
 
     def forward(self, x):
 
+        print ('AA1', x.shape)
         y = self.encoder(x)
         x_ = self.decoder(y, self.encoder.pool_indeces)
 

@@ -116,12 +116,14 @@ class StandardTransform(object):
     '''Standard Image Transforms, typically instantiated and provided to the DataSet class
 
     '''
-    def __init__(self, min_dim=300, to_tensor=True,
+    def __init__(self, min_dim=300, to_tensor=True, square=False,
                  normalize=True, norm_mean=[0.485, 0.456, 0.406], norm_std=[0.229, 0.224, 0.225]):
 
         self.transforms = []
         self.transforms.append(transforms.ToPILImage())
         self.transforms.append(transforms.Resize(min_dim))
+        if square:
+            self.transforms.append(transforms.CenterCrop(min_dim))
         if to_tensor:
             self.transforms.append(transforms.ToTensor())
         if normalize:
