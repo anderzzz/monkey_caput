@@ -106,9 +106,17 @@ class RunnerAE(object):
         #
         # Define the model
         #
-        convs = [Conv2dParams(3, 16, 3, 2, 1), Conv2dParams(16, 64, 3, 2, 1)]
-        pools = [Pool2dParams(3, 2, 1), Pool2dParams(3, 2, 1)]
-        self.model = AutoEncoder(convs, pools)
+        convs = [Conv2dParams(3, 9, 5, 2, 1),
+                 Conv2dParams(9, 27, 3, 1, 1),
+                 Conv2dParams(27, 81, 3, 2, 1),
+                 Conv2dParams(81, 256, 3, 1, 1)]
+        pools = [Pool2dParams(2, 2, 1),
+                 Pool2dParams(2, 2, 1),
+                 Pool2dParams(2, 2, 1),
+                 Pool2dParams(2, 2, 1)]
+        feature_maker = torch.nn.Conv2d(in_channels=256, out_channels=1024, kernel_size=3, stride=1)
+        feature_demaker = torch.nn.ConvTranspose2d(in_channels=1024, out_channels=256, kernel_size=3, stride=1)
+        self.model = AutoEncoder(convs, pools, feature_maker, feature_demaker)
 
         #
         # Define criterion and optimizer and scheduler

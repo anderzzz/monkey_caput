@@ -5,6 +5,7 @@ from torch import nn
 
 from collections import OrderedDict
 from copy import deepcopy
+import math
 
 class _Window2DParams(object):
 
@@ -28,7 +29,7 @@ class _Window2DParams(object):
     def output_size(self, h_in, w_in):
         h_out = (h_in - self.dilation * (self.kernel_size - 1) - 1) / self.stride + 1
         w_out = (w_in - self.dilation * (self.kernel_size - 1) - 1) / self.stride + 1
-        return int(h_out), int(w_out)
+        return math.floor(h_out), math.floor(w_out)
 
 
 class Conv2dParams(_Window2DParams):
@@ -71,17 +72,17 @@ class Encoder(nn.Module):
             self.pools.update({'layer_{}'.format(k_layer) :
                                nn.MaxPool2d(return_indices=True, **pool_layer.kwargs)})
 
+        self.norms = nn.ModuleDict(OrderedDict())
+        for k_layer in range(self.n_layers):
+            self.norms.update({'layer_{}'.format(k_layer) :
+                               nn.BatchNorm2d(num_features=conv_layers[k_layer].kwargs['out_channels'])})
+
     def forward(self, x):
 
         x_current = x
-        print ('AA2', x.shape)
         for k_layer in range(self.n_layers):
-            conv = self.convolutions['layer_{}'.format(k_layer)]
-            pool = self.pools['layer_{}'.format(k_layer)]
-            x_current, indices = pool(conv(x_current))
-            print ('AA3', x_current.shape)
-            raise RuntimeError
-
+            key = 'layer_{}'.format(k_layer)
+            x_current, indices = self.pools[key](self.norms[key](self.convolutions[key](x_current)))
             self.pool_indeces['layer_{}'.format(k_layer)] = indices
 
         return x_current
@@ -115,7 +116,7 @@ class Decoder(nn.Module):
 
 class AutoEncoder(nn.Module):
 
-    def __init__(self, conv_layers, pool_layers):
+    def __init__(self, conv_layers, pool_layers, feature_maker, feature_demaker):
         super(AutoEncoder, self).__init__()
 
         self.encoder = Encoder(conv_layers, pool_layers)
@@ -127,11 +128,15 @@ class AutoEncoder(nn.Module):
         pool_layers_invert = list(reversed(pool_layers))
         self.decoder = Decoder(conv_layers_invert, pool_layers_invert)
 
+        self.feature_maker = feature_maker
+        self.feature_demaker = feature_demaker
+
     def forward(self, x):
 
-        print ('AA1', x.shape)
         y = self.encoder(x)
-        x_ = self.decoder(y, self.encoder.pool_indeces)
+        f = self.feature_maker(y)
+        y_ = self.feature_demaker(f)
+        x_ = self.decoder(y_, self.encoder.pool_indeces)
 
         return x_
 
