@@ -24,7 +24,7 @@ from matplotlib.colors import LinearSegmentedColormap
 
 from fungiimg import FungiImg, RawData, StandardTransform, DataAugmentTransform
 from model_init import initialize_model
-from ae_cluster import AutoEncoder, Conv2dParams, Pool2dParams
+from ae_cluster import AutoEncoder, Conv2dParams, Pool2dParams, size_progression
 
 class RunnerAE(object):
     '''Bla bla
@@ -106,14 +106,17 @@ class RunnerAE(object):
         #
         # Define the model
         #
-        convs = [Conv2dParams(3, 9, 5, 2, 1),
-                 Conv2dParams(9, 27, 3, 1, 1),
-                 Conv2dParams(27, 81, 3, 2, 1),
-                 Conv2dParams(81, 256, 3, 1, 1)]
+        convs = [Conv2dParams(3, 16, 6, 2, 1),
+                 Conv2dParams(16, 32, 5, 1, 1),
+                 Conv2dParams(32, 128, 5, 2, 1),
+                 Conv2dParams(128, 256, 3, 1, 1)]
         pools = [Pool2dParams(2, 2, 1),
                  Pool2dParams(2, 2, 1),
                  Pool2dParams(2, 2, 1),
                  Pool2dParams(2, 2, 1)]
+        print (size_progression([convs[0], pools[0], convs[1], pools[1],
+                                 convs[2], pools[2], convs[3], pools[3]],
+                                 300, 300))
         feature_maker = torch.nn.Conv2d(in_channels=256, out_channels=1024, kernel_size=3, stride=1)
         feature_demaker = torch.nn.ConvTranspose2d(in_channels=1024, out_channels=256, kernel_size=3, stride=1)
         self.model = AutoEncoder(convs, pools, feature_maker, feature_demaker)
