@@ -25,6 +25,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from fungiimg import FungiImg, RawData, StandardTransform, DataAugmentTransform
 from model_init import initialize_model
 from ae_cluster import AutoEncoder, Conv2dParams, Pool2dParams, LayerParams, size_progression
+from ae_deep import AEVGGCluster
 
 class RunnerAE(object):
     '''Bla bla
@@ -79,6 +80,8 @@ class RunnerAE(object):
             transform = StandardTransform(300, to_tensor=True, normalize=True)
         elif self.inp_transform_imgs == 'standard_300_square':
             transform = StandardTransform(300, to_tensor=True, normalize=True, square=True)
+        elif self.inp_transform_imgs == 'standard_224_square':
+            transform = StandardTransform(224, to_tensor=True, normalize=True, square=True)
         else:
             raise ValueError('Unknown transform_key: {}'.format(self.inp_transform_imgs))
 
@@ -107,29 +110,30 @@ class RunnerAE(object):
         #
         # Define the model
         #
-        layer_params_e = [LayerParams('nearest input image',
-                                      (Conv2dParams(3, 8, 6, 2), 'relu', 'batch_norm', Pool2dParams(2, 2))),
-                          LayerParams('second layer',
-                                      (Conv2dParams(8, 16, 5, 1), 'relu', 'batch_norm', Pool2dParams(2, 2))),
-                          LayerParams('third layer',
-                                      (Conv2dParams(16, 32, 5, 2), 'relu', 'batch_norm', Pool2dParams(2, 2))),
-                          LayerParams('fourth layer',
-                                      (Conv2dParams(32, 64, 3, 1), 'relu', 'batch_norm', Pool2dParams(2, 2))),
-                          LayerParams('code maker',
-                                      (Conv2dParams(64, 128, 3, 1), 'relu'))]
-        print (size_progression(layer_params_e, 300, 300))
-        layer_params_d = [LayerParams('nearest input code',
-                                      (Conv2dParams(128, 64, 3, 1), 'relu', 'batch_norm', Pool2dParams(2, 2))),
-                          LayerParams('second layer',
-                                      (Conv2dParams(64, 32, 3, 1), 'relu', 'batch_norm', Pool2dParams(2, 2))),
-                          LayerParams('third layer',
-                                      (Conv2dParams(32, 16, 5, 2), 'relu', 'batch_norm', Pool2dParams(2, 2))),
-                          LayerParams('fourth layer',
-                                      (Conv2dParams(16, 8, 5, 1), 'relu', 'batch_norm', Pool2dParams(2, 2))),
-                          LayerParams('output decode layer',
-                                      (Conv2dParams(8, 3, 6, 2), 'sigmoid'))]
-        print (size_progression(layer_params_d, 1, 1, transpose=True))
-        self.model = AutoEncoder(layer_params_e, layer_params_d)
+#        layer_params_e = [LayerParams('nearest input image',
+#                                      (Conv2dParams(3, 8, 6, 2), 'batch_norm', 'relu', Pool2dParams(2, 2))),
+#                          LayerParams('second layer',
+#                                      (Conv2dParams(8, 32, 5, 1), 'batch_norm', 'relu', Pool2dParams(2, 2))),
+#                          LayerParams('third layer',
+#                                      (Conv2dParams(32, 128, 5, 2), 'batch_norm', 'relu', Pool2dParams(2, 2))),
+#                          LayerParams('fourth layer',
+#                                      (Conv2dParams(128, 256, 3, 1), 'batch_norm', 'relu', Pool2dParams(2, 2))),
+#                          LayerParams('code maker',
+#                                      (Conv2dParams(256, 512, 3, 1),))]
+#        print (size_progression(layer_params_e, 300, 300))
+#        layer_params_d = [LayerParams('nearest input code',
+#                                      (Conv2dParams(512, 256, 3, 1), 'batch_norm', 'relu', Pool2dParams(2, 2))),
+#                          LayerParams('second layer',
+#                                      (Conv2dParams(256, 128, 3, 1), 'batch_norm', 'relu', Pool2dParams(2, 2))),
+#                          LayerParams('third layer',
+#                                      (Conv2dParams(128, 32, 5, 2), 'batch_norm', 'relu', Pool2dParams(2, 2))),
+#                          LayerParams('fourth layer',
+#                                      (Conv2dParams(32, 8, 5, 1), 'batch_norm', 'relu', Pool2dParams(2, 2))),
+#                          LayerParams('output decode layer',
+#                                      (Conv2dParams(8, 3, 6, 2),))]
+#        print (size_progression(layer_params_d, 1, 1, transpose=True))
+#        self.model = AutoEncoder(layer_params_e, layer_params_d)
+        self.model = AEVGGCluster()
 
         #
         # Define criterion and optimizer and scheduler
@@ -138,7 +142,7 @@ class RunnerAE(object):
         self.set_optim()
         self.set_device()
 
-    def set_optim(self, lr=1.0, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
+    def set_optim(self, lr=0.001, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
         '''Set what and how to optimize'''
         params_to_update = []
         for name, param in self.model.named_parameters():
@@ -181,6 +185,8 @@ class RunnerAE(object):
 
                 # forward
                 outputs = self.model(inputs)
+                print (inputs[0])
+                print (outputs[0])
                 loss = self.criterion(outputs, inputs)
 
                 loss.backward()
@@ -246,9 +252,9 @@ class RunnerAE(object):
 
 def test1():
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  transforms_aug_train=None, loader_batch_size=32)
+                  transforms_aug_train=None, loader_batch_size=32, transform_imgs='standard_224_square')
     r1.print_inp()
-    r1.train_model(28)
+    r1.train_model(14)
     r1.save_model_state('test')
 
 test1()
