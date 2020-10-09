@@ -70,6 +70,11 @@ class Xcoder(nn.Module):
         super(Xcoder, self).__init__()
 
         self.n_layers = len(layers)
+        self.ordered_list_of_layer_names = [x.name for x in layers]
+        if not self.n_layers == len(set(self.ordered_list_of_layer_names)):
+            raise ValueError('Names of LayerParams must be unique for each layer')
+        self.layer_key = lambda k: self.ordered_list_of_layer_names[k]
+
         self.convolution_module = convolution_module
         self.pool_module = pool_module
         self.pool_module_kwarg = pool_module_kwarg
@@ -112,8 +117,8 @@ class Xcoder(nn.Module):
 
         return ret
 
-    def layer_key(self, n):
-        return 'layer_{}'.format(n)
+    def __repr__(self):
+        return self.layer_sequence.__str__()
 
 class Encoder(Xcoder):
     '''Encoder class
@@ -151,8 +156,6 @@ class Decoder(Xcoder):
                                       convolution_module=nn.ConvTranspose2d,
                                       pool_module=nn.MaxUnpool2d)
 
-        print (self.layer_sequence)
-
     def forward(self, x, pool_indices):
 
         x_current = x
@@ -182,5 +185,8 @@ class AutoEncoder(nn.Module):
 
     def decode(self, y):
         return self.decoder(y, self.encoder.pool_indeces)
+
+    def __repr__(self):
+        return 'Encoder:\n  {}\nDecoder:\n  {}'.format(self.encoder.__repr__(), self.decoder.__repr__())
 
 
