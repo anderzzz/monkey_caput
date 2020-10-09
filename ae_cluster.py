@@ -102,7 +102,7 @@ class Xcoder(nn.Module):
             ret = self.pool_module(**kwargs)
 
         elif operator == 'relu':
-            ret = nn.ReLU()
+            ret = nn.ReLU(inplace=True)
 
         elif operator == 'sigmoid':
             ret = nn.Sigmoid()

@@ -27,6 +27,12 @@ from model_init import initialize_model
 from ae_cluster import AutoEncoder, Conv2dParams, Pool2dParams, LayerParams, size_progression
 from ae_deep import AEVGGCluster
 
+def progress_bar(current, total, barlength=20):
+    percent = float(current) / total
+    arrow = '-' * int(percent * barlength - 1) + '>'
+    spaces = ' ' * (barlength - len(arrow))
+    print ('\rProgress: [{}{}]'.format(arrow, spaces), end='')
+
 class RunnerAE(object):
     '''Bla bla
 
@@ -139,17 +145,14 @@ class RunnerAE(object):
         # Define criterion and optimizer and scheduler
         #
         self.criterion = nn.MSELoss()
-        self.set_optim()
+        self.set_optim(lr={'encoder' : 0.001, 'decoder' : 0.01})
         self.set_device()
 
-    def set_optim(self, lr=0.001, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
+    def set_optim(self, lr, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
         '''Set what and how to optimize'''
-        params_to_update = []
-        for name, param in self.model.named_parameters():
-            if param.requires_grad:
-                params_to_update.append(param)
-
-        self.optimizer = optim.SGD(params_to_update, lr=lr, momentum=momentum)
+        self.optimizer = optim.SGD([{'params' : self.model.encoder.parameters(), 'lr' : lr['encoder']},
+                                    {'params' : self.model.decoder.parameters(), 'lr' : lr['decoder']}],
+                                   lr=min(lr.values()), momentum=momentum)
         self.exp_lr_scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                           step_size=scheduler_step_size,
                                                           gamma=scheduler_gamma)
@@ -175,6 +178,7 @@ class RunnerAE(object):
 
             self.model.train()
             running_loss = 0.0
+            n_instances = 0
 
             # Iterate over data.
             for inputs, label in self.dataloader:
@@ -185,8 +189,6 @@ class RunnerAE(object):
 
                 # forward
                 outputs = self.model(inputs)
-                print (inputs[0])
-                print (outputs[0])
                 loss = self.criterion(outputs, inputs)
 
                 loss.backward()
@@ -194,12 +196,15 @@ class RunnerAE(object):
                 self.exp_lr_scheduler.step()
 
                 running_loss += loss.item() * inputs.size(0)
+                n_instances += inputs.size(0)
+                progress_bar(n_instances, self.dataset_size)
 
             running_loss = running_loss / self.dataset_size
             print('MSE: {:.4f}'.format(running_loss), file=self.inp_f_out)
             print('', file=self.inp_f_out)
             if running_loss < best_mse:
                 best_model_wts = copy.deepcopy(self.model.state_dict())
+                self.save_model_state('save_tmp.tar')
 
         # load best model weights
         self.model.load_state_dict(best_model_wts)
@@ -252,9 +257,9 @@ class RunnerAE(object):
 
 def test1():
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  transforms_aug_train=None, loader_batch_size=32, transform_imgs='standard_224_square')
+                  transforms_aug_train=None, loader_batch_size=8, transform_imgs='standard_224_square')
     r1.print_inp()
-    r1.train_model(14)
+    r1.train_model(21)
     r1.save_model_state('test')
 
 test1()
