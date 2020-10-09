@@ -2,10 +2,9 @@
 
 '''
 from torch import nn
-
 from collections import OrderedDict
-from copy import deepcopy
 import math
+from typing import NamedTuple, Tuple
 
 def size_progression(windows, h_start, w_start, transpose=False):
 
@@ -20,6 +19,9 @@ def size_progression(windows, h_start, w_start, transpose=False):
                 ret.append('height:{}; width:{}; edge issue:{}'.format(h_current, w_current, edge_issue))
 
     return ret
+
+class UnknownOperatorError(Exception):
+    pass
 
 class _Window2DParams(object):
 
@@ -58,10 +60,9 @@ class Pool2dParams(_Window2DParams):
     def __init__(self, kernel_size, stride):
         super(Pool2dParams, self).__init__(kernel_size, stride)
 
-class LayerParams(object):
-    def __init__(self, layer_name, operators):
-        self.name = layer_name
-        self.operators = operators
+class LayerParams(NamedTuple):
+    name : str
+    operators : Tuple
 
 class Xcoder(nn.Module):
 
@@ -69,42 +70,57 @@ class Xcoder(nn.Module):
         super(Xcoder, self).__init__()
 
         self.n_layers = len(layers)
+        self.convolution_module = convolution_module
+        self.pool_module = pool_module
+        self.pool_module_kwarg = pool_module_kwarg
 
         self.layer_sequence = nn.ModuleDict(OrderedDict())
         for k_layer, layer in enumerate(layers):
-            n_output_channels = None
+            self._n_output_channels = None
             modules = nn.ModuleList([])
             for operator in layer.operators:
-                if isinstance(operator, Conv2dParams):
-                    modules.append(convolution_module(**operator.kwargs))
-                    n_output_channels = operator.kwargs['out_channels']
-
-                elif isinstance(operator, Pool2dParams):
-                    kwargs = operator.kwargs
-                    kwargs.update(pool_module_kwarg)
-                    modules.append(pool_module(**kwargs))
-
-                elif operator == 'relu':
-                    modules.append(nn.ReLU())
-
-                elif operator == 'sigmoid':
-                    modules.append(nn.Sigmoid())
-
-                elif operator == 'batch_norm':
-                    if n_output_channels is None:
-                        raise RuntimeError('A Batch Normalization must be preceded by a convolution')
-                    modules.append(nn.BatchNorm2d(n_output_channels))
-
-                else:
-                    raise RuntimeError('Unknown operator specification encountered: {}'.format(operator))
+                try:
+                    modules.append(self._convert_(operator))
+                except UnknownOperatorError as err:
+                    raise RuntimeError(err)
 
             self.layer_sequence.update({self.layer_key(k_layer) : modules})
+
+    def _convert_(self, operator):
+        if isinstance(operator, Conv2dParams):
+            ret = self.convolution_module(**operator.kwargs)
+            self._n_output_channels = operator.kwargs['out_channels']
+
+        elif isinstance(operator, Pool2dParams):
+            kwargs = operator.kwargs
+            kwargs.update(self.pool_module_kwarg)
+            ret = self.pool_module(**kwargs)
+
+        elif operator == 'relu':
+            ret = nn.ReLU()
+
+        elif operator == 'sigmoid':
+            ret = nn.Sigmoid()
+
+        elif operator == 'batch_norm':
+            if self._n_output_channels is None:
+                raise RuntimeError('A Batch Normalization must be preceded by a convolution')
+            ret = nn.BatchNorm2d(self._n_output_channels)
+
+        else:
+            raise UnknownOperatorError('Unknown operator specification encountered: {}'.format(operator))
+
+        return ret
 
     def layer_key(self, n):
         return 'layer_{}'.format(n)
 
 class Encoder(Xcoder):
+    '''Encoder class
 
+    Args:
+        layers_params (list of
+    '''
     def __init__(self, layers_params):
         super(Encoder, self).__init__(layers_params,
                                       convolution_module=nn.Conv2d,
