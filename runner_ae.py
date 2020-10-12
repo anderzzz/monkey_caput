@@ -22,7 +22,7 @@ from captum.attr import visualization as viz
 
 from matplotlib.colors import LinearSegmentedColormap
 
-from fungiimg import FungiImg, RawData, StandardTransform, DataAugmentTransform
+from fungiimg import FungiImg, RawData, StandardTransform, DataAugmentTransform, UnTransform
 from model_init import initialize_model
 from ae_cluster import AutoEncoder, Conv2dParams, Pool2dParams, LayerParams, size_progression
 from ae_deep import AEVGGCluster
@@ -93,6 +93,7 @@ class RunnerAE(object):
 
         dataset_all = [FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
                                 transform=transform,
+                                #iselector=[0,1,2,3,4,5,6,7,8,9],
                                 label_keys=label_keys)]
 
         #
@@ -145,14 +146,17 @@ class RunnerAE(object):
         # Define criterion and optimizer and scheduler
         #
         self.criterion = nn.MSELoss()
-        self.set_optim(lr={'encoder' : 0.001, 'decoder' : 0.01})
+        self.set_optim(lr={'encoder' : 0.1, 'decoder' : 0.1})
         self.set_device()
 
-    def set_optim(self, lr, momentum=0.9, scheduler_step_size=7, scheduler_gamma=0.1):
+        self.load_model_state('save_tmp')
+
+    def set_optim(self, lr, momentum=0.9, scheduler_step_size=90, scheduler_gamma=0.1):
         '''Set what and how to optimize'''
-        self.optimizer = optim.SGD([{'params' : self.model.encoder.parameters(), 'lr' : lr['encoder']},
-                                    {'params' : self.model.decoder.parameters(), 'lr' : lr['decoder']}],
-                                   lr=min(lr.values()), momentum=momentum)
+        #self.optimizer = optim.SGD([{'params' : self.model.encoder.parameters(), 'lr' : lr['encoder']},
+        #                            {'params' : self.model.decoder.parameters(), 'lr' : lr['decoder']}],
+        #                           lr=min(lr.values()), momentum=momentum)
+        self.optimizer = optim.SGD(self.model.parameters(), lr=0.01, momentum=0.9)
         self.exp_lr_scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                           step_size=scheduler_step_size,
                                                           gamma=scheduler_gamma)
@@ -191,6 +195,15 @@ class RunnerAE(object):
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, inputs)
 
+                if epoch == 49:
+                    uu = UnTransform()
+                    t1 = uu(outputs[0])
+                    t2 = uu(inputs[0])
+                    print (t1)
+                    print (t2)
+                    save_image(t1, 'test1.png')
+                    save_image(t2, 'pest1.png')
+
                 loss.backward()
                 self.optimizer.step()
                 self.exp_lr_scheduler.step()
@@ -204,7 +217,7 @@ class RunnerAE(object):
             print('', file=self.inp_f_out)
             if running_loss < best_mse:
                 best_model_wts = copy.deepcopy(self.model.state_dict())
-                self.save_model_state('save_tmp.tar')
+                self.save_model_state('save_tmp')
 
         # load best model weights
         self.model.load_state_dict(best_model_wts)
@@ -212,11 +225,11 @@ class RunnerAE(object):
     def load_model_state(self, load_file_name):
         dd = torch.load(load_file_name + '.tar')
         self.model.load_state_dict(dd['model_state_dict'])
-        self.optimizer.load_state_dict(dd['optimizer_state_dict'])
+#        self.optimizer.load_state_dict(dd['optimizer_state_dict'])
 
     def save_model_state(self, save_file_name):
-        torch.save({'model_state_dict': self.model.state_dict(),
-                    'optimizer_state_dict': self.optimizer.state_dict()},
+        torch.save({'model_state_dict': self.model.state_dict()},
+                    #'optimizer_state_dict': self.optimizer.state_dict()},
                    save_file_name + '.tar')
 
     def print_inp(self):
@@ -232,34 +245,37 @@ class RunnerAE(object):
                 key = attr_name[4:]
                 print('{} : {}'.format(key, attr_value), file=self.inp_f_out)
 
-    def eval_model(self, phase='test', custom_dataloader=None):
+    def eval_model(self, custom_dataloader=None):
         self.model.eval()
 
         if custom_dataloader is None:
-            dloader = self.dataloaders[phase]
+            dloader = self.dataloader
         else:
             dloader = custom_dataloader
 
+        n = 0
+        uu = UnTransform()
         y_true = []
         y_pred = []
         for inputs, labels in dloader:
             inputs = inputs.to(self.device)
-            labels = labels.to(self.device)
             outputs = self.model(inputs)
-            _, preds = torch.max(outputs, 1)
-
-            y_true += labels.data.tolist()
-            y_pred += preds.data.tolist()
-
-        mismatch_idxs = [n for n, (yt, yp) in enumerate(zip(y_true, y_pred)) if yt != yp]
-
-        return y_true, y_pred, mismatch_idxs
+            for out in outputs:
+                save_image(uu(out), 'test_img_{}.png'.format(n))
+                n += 1
 
 def test1():
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  transforms_aug_train=None, loader_batch_size=8, transform_imgs='standard_224_square')
+                  transforms_aug_train=None, loader_batch_size=16, transform_imgs='standard_224_square',
+                  random_seed=79)
     r1.print_inp()
-    r1.train_model(21)
+    r1.train_model(50)
     r1.save_model_state('test')
 
-test1()
+def test2():
+    r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                  transforms_aug_train=None, loader_batch_size=16, transform_imgs='standard_224_square',
+                  random_seed=79)
+    r1.eval_model()
+
+#test1()

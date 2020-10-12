@@ -14,6 +14,8 @@ class AEVGGCluster(nn.Module):
         del vgg.avgpool
         self.encoder = self._encodify_(vgg)
         self.decoder = self._invert_(self.encoder)
+        print (self.encoder)
+        print (self.decoder)
 
     def forward_encoder(self, x):
 
@@ -32,9 +34,13 @@ class AEVGGCluster(nn.Module):
     def forward_decoder(self, x, pool_indices):
 
         x_current = x
+
+        k_pool = 0
+        reversed_pool_indices = list(reversed(pool_indices))
         for module_decode in self.decoder:
             if isinstance(module_decode, nn.MaxUnpool2d):
-                x_current = module_decode(x_current, indices=pool_indices.pop(-1))
+                x_current = module_decode(x_current, indices=reversed_pool_indices[k_pool])
+                k_pool += 1
             else:
                 x_current = module_decode(x_current)
 
@@ -60,6 +66,8 @@ class AEVGGCluster(nn.Module):
 
             else:
                 modules.append(module)
+
+        #modules.append(encoder.avgpool)
 
         return modules
 
@@ -87,5 +95,7 @@ class AEVGGCluster(nn.Module):
 
         # Discard the final normalization and activation, so final module is convolution with bias
         modules_transpose = modules_transpose[:-2]
+        #modules_transpose = modules_transpose[:-1]
+        #modules_transpose.append(nn.Conv2d(in_channels=3, out_channels=3, kernel_size=1))
 
         return nn.ModuleList(modules_transpose)
