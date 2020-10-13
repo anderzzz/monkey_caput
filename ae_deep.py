@@ -1,4 +1,4 @@
-'''Auto-encoder
+'''Auto-encoder based on the VGG-16 with batch normalization
 
 '''
 import torch
@@ -10,54 +10,97 @@ class AEVGGCluster(nn.Module):
     def __init__(self):
         super(AEVGGCluster, self).__init__()
 
+        # Load the pre-trained VGG-16 model and remove the final classifier layer
         vgg = models.vgg16_bn(pretrained=True)
         del vgg.classifier
         del vgg.avgpool
+
         self.encoder = self._encodify_(vgg)
         self.decoder = self._invert_(self.encoder)
-        print (self.encoder)
-        print (self.decoder)
 
     def forward_encoder(self, x):
+        '''Execute the encoder on the image input
 
+        Args:
+            x : Pytorch image tensor
+
+        Returns:
+            x_code : Pytorch code tensor
+            pool_indices : List of pool indices Pytorch tensors in order of the pooling modules
+
+        '''
         pool_indices = []
         x_current = x
         for module_encode in self.encoder:
             output = module_encode(x_current)
+
+            # If the module is pooling, there are two outputs, the second the pool indices
             if isinstance(output, tuple) and len(output) == 2:
                 x_current = output[0]
                 pool_indices.append(output[1])
+
             else:
                 x_current = output
 
         return x_current, pool_indices
 
     def forward_decoder(self, x, pool_indices):
+        '''Execute the decoder on the code tensor input
 
+        Args:
+            x : Pytorch code tensor
+            pool_indices : List of pool indices Pytorch tensors in order the pooling modules in the encoder
+
+        Returns:
+            x : decoded Pytorch image tensor
+
+        '''
         x_current = x
 
         k_pool = 0
         reversed_pool_indices = list(reversed(pool_indices))
         for module_decode in self.decoder:
+
+            # If the module is unpooling, collect the appropriate pooling indices
             if isinstance(module_decode, nn.MaxUnpool2d):
                 x_current = module_decode(x_current, indices=reversed_pool_indices[k_pool])
                 k_pool += 1
+
             else:
                 x_current = module_decode(x_current)
 
         return x_current
 
     def forward(self, x):
+        '''Forward the autoencoder for image input
 
+        Args:
+            x : Pytorch image tensor
+
+        Returns:
+            x_prime : Pytorch image tensor following encoding and decoding
+
+        '''
         code, pool_indices = self.forward_encoder(x)
         x_prime = self.forward_decoder(code, pool_indices)
 
         return x_prime
 
     def _encodify_(self, encoder):
+        '''Create list of modules for encoder based on the VGG input
 
+        Args:
+            encoder : the template VGG model
+
+        Returns:
+            modules : the list of modules that define the encoder corresponding to the VGG model
+
+        '''
         modules = nn.ModuleList()
         for module in encoder.features:
+
+            # The max pooling in VGG does not output the pooling indices, which the decoder needs,
+            # so create a modified module for the encoder
             if isinstance(module, nn.MaxPool2d):
                 module_add = nn.MaxPool2d(kernel_size=module.kernel_size,
                                           stride=module.stride,
@@ -68,12 +111,23 @@ class AEVGGCluster(nn.Module):
             else:
                 modules.append(module)
 
-        #modules.append(encoder.avgpool)
-
         return modules
 
     def _invert_(self, encoder):
+        '''Invert the encoder in order to create the decoder as a (more or less) mirror image of the encoder
 
+        The decoder has two principal parts, the 2D transpose convolution and the 2D unpooling. The 2D transpose
+        convolution is followed by batch normalization and activation. Therefore as the module list of the encoder
+        is iterated over in reverse, a convolution in encoder is turned into transposed convolution plus normalization
+        and activation, and a maxpooling in encoder is turned into unpooling.
+
+        Args:
+            encoder : ModuleList for the encoder
+
+        Returns:
+            decoder : ModuleList for the decoder
+
+        '''
         modules_transpose = []
         for module in reversed(encoder):
 
@@ -96,22 +150,43 @@ class AEVGGCluster(nn.Module):
 
         # Discard the final normalization and activation, so final module is convolution with bias
         modules_transpose = modules_transpose[:-2]
-        #modules_transpose = modules_transpose[:-1]
-        #modules_transpose.append(nn.Conv2d(in_channels=3, out_channels=3, kernel_size=1))
 
         return nn.ModuleList(modules_transpose)
 
 def clusterloss(codes, mu_centres):
+    '''Custom loss function for the cluster hardness as defined in Aljalbout et al (2018) 'Clustering with
+    Deep Learning: Taxonomy and New Methods'
 
+    Args:
+        codes : Pytorch tensor of the code obtained from the encoder
+        mu_centres : Pytorch tensor of the cluster centres
+
+    Returns:
+        loss_functional : Pytorch loss module that quantifies the KL-divergence of the cluster hardness
+
+    '''
+    # Numerator for qij (equation 4)
     codes = codes.view(codes.shape[0], -1)
     dists = torch.cdist(codes.unsqueeze(0), mu_centres.unsqueeze(0)).squeeze()
     t1 = torch.div(torch.ones(dists.shape), torch.ones(dists.shape) + dists)
+
+    # Denominator for qij (equation 4)
     t1_sum = torch.sum(t1, dim=1).repeat((t1.shape[1], 1)).permute((1, 0))
+
+    # The similarity between points and cluster centroids
     qij = torch.div(t1, t1_sum)
+
+    # Numerator for pij (equation 5)
     t2_sum1 = torch.sum(qij, dim=0).repeat((qij.shape[0], 1))
     t2 = torch.div(torch.square(qij), t2_sum1)
+
+    # Denominator for pij (equation 5)
     t2_2 = torch.sum(t2, dim=1).repeat((t2.shape[1],1)).permute((1, 0))
+
+    # The target distribution for cluster hardness
     pij = torch.div(t2, t2_2)
+
+    # Transform the input probabilities to log-probabilities, since that's expected for the KL divergence functional
     qij = torch.log(qij)
 
     return nn.functional.kl_div(qij, pij, reduction='batchmean')
