@@ -86,6 +86,9 @@ class FungiImg(Dataset):
 
         return image, label
 
+    def info_on_(self, idx):
+        return self.img_toc.iloc[idx].name, self.img_toc.iloc[idx][0]
+
     def _assign_label(self, l_keys):
         '''Assign label to data based on family, genus, species selections'''
         category_slices = []

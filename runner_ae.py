@@ -1,4 +1,4 @@
-'''
+'''Runner classes for the two types of runs: auto-encoder and clustering of latent space
 
 '''
 import sys
@@ -24,7 +24,7 @@ class _Runner(object):
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
                        raw_csv_toc='toc_full.csv', raw_csv_root='.',
                        save_tmp_name='model_in_progress',
-                       label_key='Kantarell',
+                       label_key='Kantarell', iselector=None,
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, scheduler_step_size=15, scheduler_gamma=0.1):
 
@@ -35,6 +35,7 @@ class _Runner(object):
         self.inp_raw_csv_root = raw_csv_root
         self.inp_save_tmp_name = save_tmp_name
         self.inp_label_key = label_key
+        self.inp_iselector = iselector
         self.inp_loader_batch_size = loader_batch_size
         self.inp_num_workers = num_workers
         self.inp_lr_init = lr_init
@@ -74,7 +75,8 @@ class _Runner(object):
         transform = StandardTransform(224, to_tensor=True, normalize=True, square=True)
         self.dataset = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
                                 transform=transform,
-                                label_keys=label_keys)
+                                label_keys=label_keys,
+                                iselector=self.inp_iselector)
 
         #
         # Create the data loaders for training and testing
@@ -175,7 +177,7 @@ class RunnerCluster(_Runner):
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
                        raw_csv_toc='toc_full.csv', raw_csv_root='.',
                        save_tmp_name='model_in_progress',
-                       label_key='Kantarell',
+                       label_key='Kantarell', iselector=None,
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, scheduler_step_size=15, scheduler_gamma=0.1,
                        n_clusters=8, cluster_freq=50):
@@ -183,7 +185,7 @@ class RunnerCluster(_Runner):
         super(RunnerCluster, self).__init__(run_label, random_seed, f_out,
                                             raw_csv_toc, raw_csv_root,
                                             save_tmp_name,
-                                            label_key,
+                                            label_key, iselector,
                                             loader_batch_size, num_workers,
                                             lr_init, scheduler_step_size, scheduler_gamma)
 
@@ -208,10 +210,13 @@ class RunnerCluster(_Runner):
         self.load_model_state(ae_path)
         self.model.forward = self.model.forward_encoder
 
-    def make_cluster_centroids(self):
+    def make_cluster_centroids(self, dloader=None):
         '''Create the cluster centroids'''
+        if dloader is None:
+            dloader = self.dataloader_clustering
+
         all_codes = []
-        for inputs, labels in self.dataloader_clustering:
+        for inputs, labels in dloader:
             codes, _ = self.model.forward(inputs)
             cxnp = codes.view(codes.shape[0], -1).detach().numpy()
             all_codes.append(cxnp)
@@ -220,26 +225,28 @@ class RunnerCluster(_Runner):
 
         return torch.from_numpy(self.cluster_out.cluster_centers_)
 
-    def cluster_assignments(self):
+    def cluster_assignments(self, custom_dataloader=None):
         '''Retrieve the cluster assignments'''
+        self.make_cluster_centroids(custom_dataloader)
         assigns = self.cluster_out.labels_
-        print (assigns)
-        print (assigns.shape)
-        raise RuntimeError
+
+        return torch.from_numpy(assigns)
 
     def train(self, n_epochs):
-        '''Train the model'''
+        '''Train the model for a set number of epochs'''
         self._train(n_epochs, cmp_loss=self._exec_loss, cmp_aux=self._exec_aux)
 
     def _exec_loss(self, inputs, mu_centres):
+        '''Method to compute the loss of a model given an input. Should be called as part of the training'''
         outputs, _ = self.model.forward_encoder(inputs)
         loss = self.criterion(outputs, mu_centres)
         return loss
 
     def _exec_aux(self, inputs):
-        if self.n_loss_updates % self.recluster_freq == 0:
+        '''Method to ascertain the centroids given current model and all data. Only recluster if a certain
+        number of model updates have taken place'''
+        if self.n_loss_updates % self.inp_cluster_freq == 0:
             self.centroids = self.make_cluster_centroids()
-
         return {'mu_centres' : self.centroids}
 
 
@@ -250,7 +257,7 @@ class RunnerAE(_Runner):
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
                        raw_csv_toc='toc_full.csv', raw_csv_root='.',
                        save_tmp_name='model_in_progress',
-                       label_key='Kantarell',
+                       label_key='Kantarell', iselector=None,
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01,
                        scheduler_step_size=15, scheduler_gamma=0.1,
@@ -259,7 +266,7 @@ class RunnerAE(_Runner):
         super(RunnerAE, self).__init__(run_label, random_seed, f_out,
                                        raw_csv_toc, raw_csv_root,
                                        save_tmp_name,
-                                       label_key,
+                                       label_key, iselector,
                                        loader_batch_size, num_workers,
                                        lr_init, scheduler_step_size, scheduler_gamma)
 
@@ -285,14 +292,17 @@ class RunnerAE(_Runner):
         self.load_model_state(model_path)
 
     def train(self, n_epochs):
-        self._train(n_epochs, cmp_loss=)
+        '''Train model for set number of epochs'''
+        self._train(n_epochs, cmp_loss=self._exec_loss)
 
     def _exec_loss(self, inputs):
+        '''Method to compute the loss of a model given an input. Should be called as part of the training'''
         outputs = self.model(inputs)
         loss = self.criterion(outputs, inputs)
         return loss
 
     def eval_model(self, custom_dataloader=None):
+        '''Evaluate the Auto-encoder for a selection of images'''
         self.model.eval()
 
         if custom_dataloader is None:
@@ -317,18 +327,52 @@ def progress_bar(current, total, barlength=20):
 
 def test1():
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  transforms_aug_train=None, loader_batch_size=16, transform_imgs='standard_224_square',
-                  label_key='Kantarell',
+                  loader_batch_size=16, iselector=[0,1,2,3,4,5],
+                  label_key='Kantarell', lr_init=0.01, freeze_encoder=True,
                   random_seed=79)
     r1.print_inp()
-    r1.train_model(50)
-    r1.save_model_state('test')
+    r1.train(30)
+    r1.save_model_state('test1')
 
 def test2():
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  transforms_aug_train=None, loader_batch_size=16, transform_imgs='standard_224_square',
+                  loader_batch_size=16, iselector=[0,1,2,3,4,5],
+                  label_key='Kantarell', lr_init=0.001, scheduler_step_size=25, freeze_encoder=True,
+                  random_seed=79)
+    r1.print_inp()
+    r1.fetch_model('test1')
+    r1.train(50)
+    r1.save_model_state('test2')
+
+def test3():
+    r1 = RunnerCluster(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                       loader_batch_size=16, iselector=[0,1,2,3,4,5],
+                       label_key='Kantarell', lr_init=0.01, n_clusters=3,
+                       random_seed=79)
+    r1.print_inp()
+    r1.fetch_encoder('test2')
+    r1.train(3)
+    dloader = DataLoader(r1.dataset, shuffle=False)
+    cass = r1.cluster_assignments(dloader)
+    print (cass)
+    img_meta, img_filename = r1.dataset.info_on_(0)
+
+def test4():
+    r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                  loader_batch_size=16,
+                  label_key='Kantarell', lr_init=0.001, scheduler_step_size=15, freeze_encoder=True,
+                  random_seed=79)
+    r1.print_inp()
+    r1.fetch_model('test2')
+    r1.train(30)
+    r1.save_model_state('test4')
+
+def testX2():
+    r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                  loader_batch_size=16, iselector=[0,1,2,3,4,5],
                   label_key='Kantarell',
                   random_seed=79)
+    r1.fetch_model('test2')
     r1.eval_model()
 
-test1()
+test4()
