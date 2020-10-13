@@ -1,6 +1,7 @@
 '''Auto-encoder
 
 '''
+import torch
 from torch import nn
 from torchvision import models
 
@@ -99,3 +100,18 @@ class AEVGGCluster(nn.Module):
         #modules_transpose.append(nn.Conv2d(in_channels=3, out_channels=3, kernel_size=1))
 
         return nn.ModuleList(modules_transpose)
+
+def clusterloss(codes, mu_centres):
+
+    codes = codes.view(codes.shape[0], -1)
+    dists = torch.cdist(codes.unsqueeze(0), mu_centres.unsqueeze(0)).squeeze()
+    t1 = torch.div(torch.ones(dists.shape), torch.ones(dists.shape) + dists)
+    t1_sum = torch.sum(t1, dim=1).repeat((t1.shape[1], 1)).permute((1, 0))
+    qij = torch.div(t1, t1_sum)
+    t2_sum1 = torch.sum(qij, dim=0).repeat((qij.shape[0], 1))
+    t2 = torch.div(torch.square(qij), t2_sum1)
+    t2_2 = torch.sum(t2, dim=1).repeat((t2.shape[1],1)).permute((1, 0))
+    pij = torch.div(t2, t2_2)
+    qij = torch.log(qij)
+
+    return nn.functional.kl_div(qij, pij, reduction='batchmean')
