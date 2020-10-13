@@ -1,4 +1,7 @@
-'''Runner classes for the two types of runs: auto-encoder and clustering of latent space
+'''Runner classes for the two types of runs:
+
+(1) Training of the Auto-Encoder for set of images
+(2) Training of the Encoder to create well-defined clusters of the latent image space
 
 '''
 import sys
@@ -6,7 +9,6 @@ import time
 import copy
 import numpy as np
 from numpy.random import seed
-from sklearn.cluster import KMeans
 
 import torch
 from torchvision.utils import save_image
@@ -14,11 +16,14 @@ from torch.utils.data import DataLoader
 from torch import nn
 from torch import optim
 
+from sklearn.cluster import KMeans
+
 from fungiimg import FungiImg, StandardTransform, UnTransform
-from ae_deep import AEVGGCluster, clusterloss
+from ae_deep import AutoEncoderVGG
+from cluster_utils import clusterloss
 
 class _Runner(object):
-    '''Bla bla
+    '''Parent class for the auto-encoder and clustering runners
 
     '''
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
@@ -88,7 +93,7 @@ class _Runner(object):
         #
         # Define model
         #
-        self.model = AEVGGCluster()
+        self.model = AutoEncoderVGG()
 
     def set_optim(self, parameters, lr=0.01, scheduler_step_size=15, scheduler_gamma=0.1):
         '''Set what and how to optimize'''
