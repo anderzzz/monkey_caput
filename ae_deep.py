@@ -1,7 +1,8 @@
 '''Auto-encoder based on the VGG-16 with batch normalization
 
+Written By: Anders Ohrn, September 2020
+
 '''
-import torch
 from torch import nn
 from torchvision import models
 

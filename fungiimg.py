@@ -138,13 +138,14 @@ class StandardTransform(object):
         return self.t_total(img)
 
 class UnTransform(object):
+    '''Invert standard image normalization
 
+    '''
     def __init__(self, norm_mean=[0.485, 0.456, 0.406], norm_std=[0.229, 0.224, 0.225]):
 
         self.transforms = []
         self.transforms.append(transforms.Normalize(mean=[-m / s for m, s in zip(norm_mean, norm_std)],
                                                     std=[1.0 / s for s in norm_std]))
-        #self.transforms.append(transforms.ToPILImage())
         self.t_total = transforms.Compose(self.transforms)
 
     def __call__(self, img):

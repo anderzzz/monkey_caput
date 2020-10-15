@@ -3,6 +3,8 @@
 (1) Training of the Auto-Encoder for set of images
 (2) Training of the Encoder to create well-defined clusters of the latent image space
 
+Written By: Anders Ohrn, September 2020
+
 '''
 import sys
 import time
@@ -341,17 +343,17 @@ def test1():
 
 def test2():
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  loader_batch_size=16, iselector=[0,1,2,3,4,5],
-                  label_key='Kantarell', lr_init=0.001, scheduler_step_size=25, freeze_encoder=True,
+                  loader_batch_size=16, iselector=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14],
+                  label_key='Kantarell', lr_init=0.001, scheduler_step_size=30, freeze_encoder=True,
                   random_seed=79)
     r1.print_inp()
     r1.fetch_model('test1')
-    r1.train(50)
+    r1.train(60)
     r1.save_model_state('test2')
 
 def test3():
     r1 = RunnerCluster(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                       loader_batch_size=16, iselector=[0,1,2,3,4,5],
+                       loader_batch_size=16, iselector=[0,1,2,3,4,5,6,7,8,9],
                        label_key='Kantarell', lr_init=0.01, n_clusters=3,
                        random_seed=79)
     r1.print_inp()
@@ -365,11 +367,11 @@ def test3():
 def test4():
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                   loader_batch_size=16,
-                  label_key='Kantarell', lr_init=0.001, scheduler_step_size=15, freeze_encoder=True,
+                  label_key='Kantarell', lr_init=0.01, scheduler_step_size=20, freeze_encoder=False,
                   random_seed=79)
     r1.print_inp()
-    r1.fetch_model('test2')
-    r1.train(30)
+    r1.fetch_model('model_in_progress')
+    r1.train(60)
     r1.save_model_state('test4')
 
 def testX2():

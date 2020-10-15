@@ -1,5 +1,7 @@
 '''Tools to aid the image clustering
 
+Written By: Anders Ohrn, September 2020
+
 '''
 import torch
 from torch import nn
