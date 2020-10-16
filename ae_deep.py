@@ -3,6 +3,7 @@
 Written By: Anders Ohrn, September 2020
 
 '''
+import torch
 from torch import nn
 from torchvision import models
 
@@ -18,6 +19,9 @@ class AutoEncoderVGG(nn.Module):
 
         self.encoder = self._encodify_(vgg)
         self.decoder = self._invert_(self.encoder)
+
+    def dim_code(self, img_dim):
+        return self.forward_encoder(torch.zeros((1, 3, img_dim, img_dim)))[0].shape
 
     def forward_encoder(self, x):
         '''Execute the encoder on the image input
