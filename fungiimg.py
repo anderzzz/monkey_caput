@@ -163,7 +163,7 @@ class DataAugmentTransform(object):
         self.transforms = []
         self.transforms.append(transforms.ToPILImage())
         if augmentation_label == 'random_resized_crop':
-            self.transforms.append(transforms.RandomResizedCrop((300, 450), scale=(0.67,1.0)))
+            self.transforms.append(transforms.RandomResizedCrop((min_dim, int(min_dim * 1.5)), scale=(0.67,1.0)))
         elif augmentation_label == 'random_rotation':
             self.transforms.append(transforms.RandomRotation(180.0))
         self.transforms.append(transforms.ToTensor())

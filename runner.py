@@ -86,6 +86,10 @@ class Runner(object):
         #
         if self.inp_transform_imgs == 'standard_300':
             transform = StandardTransform(300, to_tensor=True, normalize=True)
+            mdim = 300
+        elif self.inp_transform_imgs == 'standard_244':
+            transform = StandardTransform(244, to_tensor=True, normalize=True)
+            mdim = 244
         else:
             raise ValueError('Unknown transform_key: {}'.format(self.inp_transform_imgs))
 
@@ -108,13 +112,12 @@ class Runner(object):
         # Augment training data set with a variety of transformed augmentation images
         #
         for t_aug_label in self.inp_transforms_aug_train:
-            transform = DataAugmentTransform(t_aug_label, 300, to_tensor=True, normalize=False)
+            transform = DataAugmentTransform(t_aug_label, mdim, to_tensor=True, normalize=False)
             dataset_train_x = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
                                        iselector=train_ids, transform=transform,
                                        label_keys=label_keys)
             dataset_train_all.append(dataset_train_x)
         self.dataset_train = ConcatDataset(dataset_train_all)
-        print (len(self.dataset_train), len(self.dataset_test))
 
         #
         # Create the data loaders for training and testing
@@ -367,28 +370,30 @@ def test1():
 
 def test2():
     r2 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transform_imgs='standard_244',
                 transforms_aug_train=['random_resized_crop'], f_test=0.15,
-                model_label='alexnet', label_key='Champignon vs Fluesvamp')
+                model_label='resnet101', label_key='Champignon vs Fluesvamp')
     r2.print_inp()
     print (r2.dataset_sizes)
     r2.train_model(21)
-    r2.save_model_state('save_champ_binary_aug1_alex')
+    r2.save_model_state('save_champ_binary_aug1_resnet')
 
     r2 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                transform_imgs='standard_244',
                 transforms_aug_train=[], f_test=0.15,
-                model_label='alexnet', label_key='Champignon vs Fluesvamp')
+                model_label='resnet101', label_key='Champignon vs Fluesvamp')
     r2.print_inp()
     print (r2.dataset_sizes)
     r2.train_model(21)
-    r2.save_model_state('save_champ_binary_noaug_alex')
+    r2.save_model_state('save_champ_binary_noaug_resnet')
 
 def test3():
     r3 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                 transforms_aug_train=[], f_test=0.15,
-                model_label='alexnet', label_key='Kantarell vs Fluesvamp')
+                model_label='vgg', label_key='Kantarell vs Fluesvamp')
     print (r3.dataset_sizes)
     print (r3.dataset_test.label_semantics)
-    r3.load_model_state('save_kant_binary_noaug_alex_21epoch')
+    r3.load_model_state('save_kant_binary_noaug_vgg16_21epoch')
     matrix, mismatch = r3.confusion_matrix()
     print (matrix)
     print (mismatch)
@@ -478,8 +483,8 @@ def test10():
     m1, m2 = r10.confusion_matrix()
     print (m1)
 
-#test4()
+test2()
 #test3()
 #test6()
 #test8()
-test10()
+#test10()
