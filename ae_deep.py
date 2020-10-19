@@ -8,7 +8,9 @@ from torch import nn
 from torchvision import models
 
 class AutoEncoderVGG(nn.Module):
+    '''Auto-Encoder based on the VGG-16 with batch normalization template model
 
+    '''
     def __init__(self):
         super(AutoEncoderVGG, self).__init__()
 
@@ -21,17 +23,18 @@ class AutoEncoderVGG(nn.Module):
         self.decoder = self._invert_(self.encoder)
 
     def dim_code(self, img_dim):
+        '''Convenience function to provide dimension of code given a square image of specified size'''
         return self.forward_encoder(torch.zeros((1, 3, img_dim, img_dim)))[0].shape
 
     def forward_encoder(self, x):
         '''Execute the encoder on the image input
 
         Args:
-            x : Pytorch image tensor
+            x (Tensor): image tensor
 
         Returns:
-            x_code : Pytorch code tensor
-            pool_indices : List of pool indices Pytorch tensors in order of the pooling modules
+            x_code (Tensor): code tensor
+            pool_indices (list): Pool indices tensors in order of the pooling modules
 
         '''
         pool_indices = []
@@ -43,7 +46,6 @@ class AutoEncoderVGG(nn.Module):
             if isinstance(output, tuple) and len(output) == 2:
                 x_current = output[0]
                 pool_indices.append(output[1])
-
             else:
                 x_current = output
 
@@ -53,11 +55,11 @@ class AutoEncoderVGG(nn.Module):
         '''Execute the decoder on the code tensor input
 
         Args:
-            x : Pytorch code tensor
-            pool_indices : List of pool indices Pytorch tensors in order the pooling modules in the encoder
+            x (Tensor): code tensor obtained from encoder
+            pool_indices (list): Pool indices Pytorch tensors in order the pooling modules in the encoder
 
         Returns:
-            x : decoded Pytorch image tensor
+            x (Tensor): decoded image tensor
 
         '''
         x_current = x
@@ -70,7 +72,6 @@ class AutoEncoderVGG(nn.Module):
             if isinstance(module_decode, nn.MaxUnpool2d):
                 x_current = module_decode(x_current, indices=reversed_pool_indices[k_pool])
                 k_pool += 1
-
             else:
                 x_current = module_decode(x_current)
 
@@ -80,10 +81,10 @@ class AutoEncoderVGG(nn.Module):
         '''Forward the autoencoder for image input
 
         Args:
-            x : Pytorch image tensor
+            x (Tensor): image tensor
 
         Returns:
-            x_prime : Pytorch image tensor following encoding and decoding
+            x_prime (Tensor): image tensor following encoding and decoding
 
         '''
         code, pool_indices = self.forward_encoder(x)
@@ -92,7 +93,11 @@ class AutoEncoderVGG(nn.Module):
         return x_prime
 
     def _encodify_(self, encoder):
-        '''Create list of modules for encoder based on the VGG input
+        '''Create list of modules for encoder based on the architecture in VGG template model.
+
+        In the encoder-decoder architecture, the unpooling operations in the decoder require pooling
+        indices from the corresponding pooling operation in the encoder. In VGG template, these indices
+        are not returned. Hence the need for this method to extent the pooling operations.
 
         Args:
             encoder : the template VGG model
@@ -103,16 +108,12 @@ class AutoEncoderVGG(nn.Module):
         '''
         modules = nn.ModuleList()
         for module in encoder.features:
-
-            # The max pooling in VGG does not output the pooling indices, which the decoder needs,
-            # so create a modified module for the encoder
             if isinstance(module, nn.MaxPool2d):
                 module_add = nn.MaxPool2d(kernel_size=module.kernel_size,
                                           stride=module.stride,
                                           padding=module.padding,
                                           return_indices=True)
                 modules.append(module_add)
-
             else:
                 modules.append(module)
 
@@ -121,16 +122,16 @@ class AutoEncoderVGG(nn.Module):
     def _invert_(self, encoder):
         '''Invert the encoder in order to create the decoder as a (more or less) mirror image of the encoder
 
-        The decoder has two principal parts, the 2D transpose convolution and the 2D unpooling. The 2D transpose
+        The decoder is comprised of two principal types: the 2D transpose convolution and the 2D unpooling. The 2D transpose
         convolution is followed by batch normalization and activation. Therefore as the module list of the encoder
         is iterated over in reverse, a convolution in encoder is turned into transposed convolution plus normalization
         and activation, and a maxpooling in encoder is turned into unpooling.
 
         Args:
-            encoder : ModuleList for the encoder
+            encoder (ModuleList): the encoder
 
         Returns:
-            decoder : ModuleList for the decoder
+            decoder (ModuleList): the decoder obtained by "inversion" of encoder
 
         '''
         modules_transpose = []
@@ -143,14 +144,12 @@ class AutoEncoderVGG(nn.Module):
                 module_transpose = nn.ConvTranspose2d(**kwargs)
                 module_norm = nn.BatchNorm2d(module.in_channels)
                 module_act = nn.ReLU(inplace=True)
-
                 modules_transpose += [module_transpose, module_norm, module_act]
 
             elif isinstance(module, nn.MaxPool2d):
                 kwargs = {'kernel_size' : module.kernel_size, 'stride' : module.stride,
                           'padding' : module.padding}
                 module_transpose = nn.MaxUnpool2d(**kwargs)
-
                 modules_transpose += [module_transpose]
 
         # Discard the final normalization and activation, so final module is convolution with bias
