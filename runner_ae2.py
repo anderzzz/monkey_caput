@@ -276,7 +276,7 @@ class RunnerCluster(_Runner):
         torch.save(cluster_vecs, 'cluster_tmp')
         self.criterion.update_cluster_centres_(cluster_vecs)
 
-        self._train(n_epochs, cmp_loss=self._exec_loss, dummy=self.criterion)
+        self._train(n_epochs, cmp_loss=self._exec_loss)
 
     def _exec_loss(self, inputs):
         '''Method to compute the loss of the model given an input. Called as part of the training.
