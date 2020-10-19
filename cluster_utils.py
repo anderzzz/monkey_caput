@@ -10,16 +10,39 @@ class ClusterHardnessLoss(nn.Module):
     '''Cluster Hardness Loss function as described in equations 4-6 in 'Clustering with Deep Learning: Taxonomy
     and New Methods' by Aljalbout et al. (2018) at arXiv:1801-07648v2
 
+    Args:
+        cc_init (PyTorch Tensor): initial cluster centres against which hardness is computed
+        batch_reduction (bool, optional): if the total KL divergence should be normalized by batch size.
+            Defaults to True.
+
+    Attributes:
+        cluster_centres (PyTorch Parameter): the cluster centre vectors, which are parameters, hence possible
+            to pass to an optimizer for optimization.
+
     '''
-    def __init__(self, batch_reduction=True):
+    def __init__(self, cc_init, batch_reduction=True):
         super(ClusterHardnessLoss, self).__init__()
+
         self.batch_reduction = batch_reduction
 
-    def forward(self, codes, mu_centres):
+        # The cluster centres are set as parameters of the module, such that they can be easily optimized.
+        self.cluster_centres = nn.parameter.Parameter(cc_init)
+
+    def forward(self, codes):
+        '''Forward pass method for the cluster hardness loss
+
+        Args:
+            codes (PyTorch Tensor): codes for a mini-batch of objects, typically obtained from a trainable encoder.
+                Dimensions should be (B, D) where B is size of batch, D is the dimension of the code
+
+        Returns:
+            loss : The cluster hardness loss that can be back-propagated.
+
+        '''
 
         # Numerator for qij (equation 4)
         codes = codes.view(codes.shape[0], -1)
-        dists = torch.square(torch.cdist(codes.unsqueeze(0), mu_centres.unsqueeze(0))).squeeze()
+        dists = torch.square(torch.cdist(codes.unsqueeze(0), self.cluster_centres.unsqueeze(0))).squeeze()
         t1 = torch.div(torch.ones(dists.shape), torch.ones(dists.shape) + dists)
 
         # Denominator for qij (equation 4)
@@ -46,6 +69,15 @@ class ClusterHardnessLoss(nn.Module):
 
         return kl_div
 
+    def update_cluster_centres_(self, c_new):
+        '''Manually update the cluster centres
+
+        '''
+        if c_new.shape != self.cluster_centres.shape:
+            raise ValueError('The dimension of new cluster centres {}, '.format(c_new.shape) + \
+                             'not identical to dimension of old cluster centres {}'.format(self.cluster_centres.shape))
+        self.cluster_centres.data = c_new.data
+
 def test1():
 
     import numpy as np
@@ -56,8 +88,8 @@ def test1():
     m = [[2,2,0], [0,0,2]]
     t1 = torch.tensor(z, dtype=torch.float64, requires_grad=True)
     t2 = torch.tensor(m, dtype=torch.float64, requires_grad=True)
-    tester = ClusterHardnessLoss()
-    div = tester(t1, t2)
+    tester = ClusterHardnessLoss(t2)
+    div = tester(t1)
 
     # Manually compute the KL divergence
     aa = []
@@ -81,11 +113,10 @@ def test1():
     tot = 0.0
     for p, q in zip(pij, qij):
         tot += p * np.log(p / q)
+    tot = tot / 3.0
 
     assert np.abs(tot - div.item()) < 1e-5
 
     # Compute the analytical gradients and compare against numerical gradients
     div.backward()
-    assert autograd.gradcheck(tester, (t1, t2))
-
-
+    assert autograd.gradcheck(tester, (t1,))

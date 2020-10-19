@@ -19,10 +19,40 @@ from torch import nn
 from torch import optim
 
 from sklearn.cluster import KMeans
+import matplotlib as plt
 
 from fungiimg import FungiImg, StandardTransform, UnTransform
 from ae_deep import AutoEncoderVGG
 from cluster_utils import ClusterHardnessLoss
+
+
+def plot_grad_flow(named_parameters):
+    '''Plots the gradients flowing through different layers in the net during training.
+    Can be used for checking for possible gradient vanishing / exploding problems.
+
+    Usage: Plug this function in Trainer class after loss.backwards() as
+    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
+    ave_grads = []
+    max_grads = []
+    layers = []
+    for n, p in named_parameters:
+        if (p.requires_grad) and ("bias" not in n):
+            layers.append(n)
+            ave_grads.append(p.grad.abs().mean())
+            max_grads.append(p.grad.abs().max())
+    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+    plt.hlines(0, 0, len(ave_grads) + 1, lw=2, color="k")
+    plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
+    plt.xlim(left=0, right=len(ave_grads))
+    plt.ylim(bottom=-0.001, top=0.02)  # zoom in on the lower gradient regions
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    plt.legend([Line2D([0], [0], color="c", lw=4),
+                Line2D([0], [0], color="b", lw=4),
+                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
 
 class _Runner(object):
     '''Parent class for the auto-encoder and clustering runners
@@ -48,8 +78,6 @@ class _Runner(object):
         self.inp_lr_init = lr_init
         self.inp_scheduler_step_size = scheduler_step_size
         self.inp_scheduler_gamma = scheduler_gamma
-
-        self.n_loss_updates = 0
 
         #
         # Set random seed and make run deterministic
@@ -125,19 +153,14 @@ class _Runner(object):
         torch.save({'model_state_dict': self.model.state_dict()},
                    save_file_name + '.tar')
 
-    def _train(self, n_epochs, cmp_loss, cmp_aux=None):
+    def _train(self, n_epochs, cmp_loss):
         '''Train the model a set number of epochs
 
         '''
         best_model_wts = copy.deepcopy(self.model.state_dict())
         best_err = 1e20
-        aux_out = {}
         self.model.train()
 
-        #
-        # Iterate over epochs
-        #
-        since = time.time()
         for epoch in range(n_epochs):
             print('Epoch {}/{}'.format(epoch, n_epochs - 1), file=self.inp_f_out)
             print('-' * 10, file=self.inp_f_out)
@@ -152,13 +175,11 @@ class _Runner(object):
                 self.optimizer.zero_grad()
 
                 # Compute loss
-                if not cmp_aux is None:
-                    aux_out = cmp_aux(inputs)
-                loss = cmp_loss(inputs, **aux_out)
+                loss = cmp_loss(inputs)
 
                 # Back-propagate and optimize
                 loss.backward()
-                self.n_loss_updates += 1
+
                 self.optimizer.step()
                 self.exp_lr_scheduler.step()
 
@@ -189,7 +210,7 @@ class RunnerCluster(_Runner):
                        label_key='Kantarell', iselector=None,
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, scheduler_step_size=15, scheduler_gamma=0.1,
-                       n_clusters=8, cluster_freq=50):
+                       n_clusters=8):
 
         super(RunnerCluster, self).__init__(run_label, random_seed, f_out,
                                             raw_csv_toc, raw_csv_root,
@@ -200,22 +221,16 @@ class RunnerCluster(_Runner):
 
         # Initialize KMeans
         self.inp_n_clusters = n_clusters
-        self.inp_cluster_freq = cluster_freq
         self.cluster = KMeans(n_clusters=self.inp_n_clusters)
         self.dataloader_clustering = copy.deepcopy(self.dataloader)
 
-        cluster_centers_ = torch.zeros((self.inp_n_clusters, self._dim_code))
-        self.cluster_centres = cluster_centers_.to(self.device).detach().requires_grad_(True)
-        print (list(self.model.encoder.parameters()))
-        print (self.cluster_centres)
-
         # Define criterion and optimizer
-        self.criterion = ClusterHardnessLoss()
+        cluster_centers_init = torch.zeros((self.inp_n_clusters, self._dim_code), dtype=torch.float64)
+        self.criterion = ClusterHardnessLoss(cluster_centers_init)
         self.set_optim(lr=self.inp_lr_init,
                        scheduler_step_size=self.inp_scheduler_step_size,
                        scheduler_gamma=self.inp_scheduler_gamma,
-                       parameters=list(self.model.encoder.parameters()) + list(self.cluster_centres))
-        raise RuntimeError
+                       parameters=list(self.model.encoder.parameters()) + list(self.criterion.parameters()))
 
         # Output the run parameters
         self.print_inp()
@@ -250,21 +265,18 @@ class RunnerCluster(_Runner):
 
     def train(self, n_epochs):
         '''Train the model for a set number of epochs'''
-        self._train(n_epochs, cmp_loss=self._exec_loss, cmp_aux=self._exec_aux)
+        cluster_vecs = self.make_cluster_centroids()
+        #cluster_vecs = torch.load('cluster_tmp')
+        torch.save(cluster_vecs, 'cluster_tmp')
+        self.criterion.update_cluster_centres_(cluster_vecs)
+        self._train(n_epochs, cmp_loss=self._exec_loss)
 
-    def _exec_loss(self, inputs, mu_centres):
+    def _exec_loss(self, inputs):
         '''Method to compute the loss of a model given an input. Should be called as part of the training'''
         outputs, _ = self.model.forward_encoder(inputs)
-        loss = self.criterion(outputs, mu_centres)
+        loss = self.criterion(outputs)
+        print (self.criterion.cluster_centres)
         return loss
-
-    def _exec_aux(self, inputs):
-        '''Method to ascertain the centroids given current model and all data. Only recluster if a certain
-        number of model updates have taken place'''
-        if self.n_loss_updates % self.inp_cluster_freq == 0:
-            self.centroids = self.make_cluster_centroids()
-        return {'mu_centres' : self.centroids}
-
 
 class RunnerAE(_Runner):
     '''Bla bla
@@ -409,7 +421,7 @@ def test8():
                        label_key='Kantarell',
                        random_seed=79,
                        lr_init=0.001, scheduler_step_size=10, scheduler_gamma=0.1,
-                       n_clusters=15, cluster_freq=12)
+                       n_clusters=8)
     r1.fetch_encoder('kantarell_ae_final')
     r1.train(5)
     r1.save_model_state('cluster1')
