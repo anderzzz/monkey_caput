@@ -154,6 +154,9 @@ class UnTransform(object):
 class DataAugmentTransform(object):
     '''Random Image Transforms for the purpose of data augmentation
 
+    This class is not fully general, and assumes the input images have width 50% greater than height. Reuse
+    this class with caution.
+
     '''
     def __init__(self, augmentation_label, min_dim=300, to_tensor=True,
                  normalize=True, norm_mean=[0.485, 0.456, 0.406], norm_std=[0.229, 0.224, 0.225]):
@@ -171,37 +174,4 @@ class DataAugmentTransform(object):
 
     def __call__(self, img):
         return self.t_aug(self.basic_transform(img))
-
-def test1():
-    fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi')
-    xx, label = fds[1]
-    print (fds.label_semantics)
-
-def test2():
-    tt = StandardTransform(300, to_tensor=True, normalize=False)
-    fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi', transform=tt)
-    xx, label = fds[1000]
-    io.imsave('dummy.png', xx.permute(1,2,0))
-    print (label)
-
-def test3():
-    fds = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
-                   label_keys=('Genus == "Cantharellus"', 'Genus == "Amanita"'))
-    print (fds.label_semantics)
-
-def test4():
-    print (FungiImg.raw_table_rows())
-
-def test5():
-    from numpy import random
-    img_items = list(range(RawData.N_ROWS.value))
-    random.shuffle(img_items)
-    test_mask = img_items[:200]
-    train_mask = img_items[200:]
-    fds_test = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
-                        iselector=test_mask)
-    print (fds_test.img_toc.shape)
-    fds_train = FungiImg('../../Desktop/Fungi/toc_full.csv', '../../Desktop/Fungi',
-                         iselector=train_mask)
-    print (fds_train.img_toc.shape)
 

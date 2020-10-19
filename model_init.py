@@ -1,6 +1,6 @@
 '''Model initializer script, modified from https://pytorch.org/tutorials/beginner/finetuning_torchvision_models_tutorial.html
 
-Available pretrained models: `inception_v3`, `alexnet`, `densenet`, `resnext`, and `vgg`
+Available pretrained models: `inception_v3`, `alexnet`, `densenet`, `resnet101`, `resnext`, and `vgg`
 
 By: Anders Ohrn, September 2020
 
@@ -9,16 +9,24 @@ from torch import nn
 from torchvision import models
 
 def initialize_model(label, num_classes, use_pretrained=True, feature_extracting=False):
+    '''Retrieve template model for image recognition and substitute the output layer with
+    suitable replacement. Note that the substitution requires knowledge of how the model names its output layer.
 
-    model = None
-    input_size = 0
+    Args:
+        label (str): The name of the template model
+        num_classes (int): The number of classes for the output in the modified output model
+        use_pretrained (bool, optional): If pre-trained parameters should be used. Defaults to True.
+        feature_extracting (bool, optional): If only the output layer should be optimized. Defaults to False.
 
+    Returns:
+        model (PyTorch model): The model as specified by input arguments
+        input_size (int): The smallest allowed image side for the model
+
+    '''
     if label == 'inception_v3':
-        # Load the Inception V3 model
         model = models.inception_v3(pretrained=use_pretrained)
         set_parameter_requires_grad(model, feature_extracting)
 
-        # Reconfigure the output layer. This builds on knowledge of what output layer is called
         num_ftrs = model.AuxLogits.fc.in_features
         model.AuxLogits.fc = nn.Linear(num_ftrs, num_classes)
         num_ftrs = model.fc.in_features
@@ -26,7 +34,7 @@ def initialize_model(label, num_classes, use_pretrained=True, feature_extracting
         input_size = 299
 
     elif label == 'vgg':
-        model = models.vgg11_bn(pretrained=use_pretrained)
+        model = models.vgg16_bn(pretrained=use_pretrained)
         set_parameter_requires_grad(model, feature_extracting)
 
         num_ftrs = model.classifier[6].in_features
@@ -34,41 +42,33 @@ def initialize_model(label, num_classes, use_pretrained=True, feature_extracting
         input_size = 224
 
     elif label == 'alexnet':
-        # Load the Alexnet model
         model = models.alexnet(pretrained=use_pretrained)
         set_parameter_requires_grad(model, feature_extracting)
 
-        # Reconfigure the output layer. This builds on knowledge of what output layer is called
         num_ftrs = model.classifier[6].in_features
         model.classifier[6] = nn.Linear(num_ftrs, num_classes)
         input_size = 224
 
     elif label == 'densenet':
-        # Load the DenseNet model
         model = models.densenet161(pretrained=use_pretrained)
         set_parameter_requires_grad(model, feature_extracting)
 
-        # Reconfigure the output layer. This builds on knowledge of what the output layer is called
         num_ftrs = model.classifier.in_features
         model.classifier = nn.Linear(num_ftrs, num_classes)
         input_size = 224
 
     elif label == 'resnet101':
-        # Load the ResNet101 model
         model = models.resnet101(pretrained=use_pretrained)
         set_parameter_requires_grad(model, feature_extracting)
 
-        # Reconfigure the output layer.
         num_ftrs = model.fc.in_features
         model.fc = nn.Linear(num_ftrs, num_classes)
         input_size = 224
 
     elif label == 'resnext':
-        # Load the ResNext-101 model
         model = models.resnext101_32x8d(pretrained=use_pretrained)
         set_parameter_requires_grad(model, feature_extracting)
 
-        # Reconfigure the output layer. This builds on knowledge of what the output layer is called
         num_ftrs = model.fc.in_features
         model.fc = nn.Linear(num_ftrs, num_classes)
         input_size = 224
