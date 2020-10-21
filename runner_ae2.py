@@ -18,9 +18,11 @@ from torch.utils.data import DataLoader
 from torch import nn
 from torch import optim
 
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, AgglomerativeClustering
+from scipy.cluster.hierarchy import dendrogram
+from matplotlib import pyplot as plt
 
-from fungiimg import FungiImg, StandardTransform, UnTransform
+from fungiimg import FungiImgGridCrop, StandardTransform, UnTransform
 from ae_deep import AutoEncoderVGG
 from cluster_utils import ClusterHardnessLoss
 
@@ -31,7 +33,7 @@ class _Runner(object):
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
                        raw_csv_toc='toc_full.csv', raw_csv_root='.',
                        save_tmp_name='model_in_progress',
-                       label_key='Kantarell', iselector=None,
+                       selector=None, iselector=None,
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1):
@@ -42,7 +44,7 @@ class _Runner(object):
         self.inp_raw_csv_toc = raw_csv_toc
         self.inp_raw_csv_root = raw_csv_root
         self.inp_save_tmp_name = save_tmp_name
-        self.inp_label_key = label_key
+        self.inp_selector = selector
         self.inp_iselector = iselector
         self.inp_loader_batch_size = loader_batch_size
         self.inp_num_workers = num_workers
@@ -60,28 +62,24 @@ class _Runner(object):
         torch.backends.cudnn.benchmark = False
 
         # Define the slices of image data to use
-        if self.inp_label_key == 'Kantarell and Fluesvamp':
-            label_keys = ('Family == "Cantharellaceae"', 'Family == "Amanitaceae"')
-        elif self.inp_label_key == 'Kantarell':
-            label_keys = ('Family == "Cantharellaceae"',)
-        elif self.inp_label_key is None:
-            label_keys = None
-        else:
-            raise ValueError('Unknown label_key: {}'.format(self.inp_label_key))
+#        if self.inp_label_key == 'Kantarell and Fluesvamp':
+#            label_keys = ('Family == "Cantharellaceae"', 'Family == "Amanitaceae"')
+#        elif self.inp_label_key == 'Kantarell':
+#            label_keys = ('Family == "Cantharellaceae"',)
+#        elif self.inp_label_key is None:
+#            label_keys = None
+#        else:
+#            raise ValueError('Unknown label_key: {}'.format(self.inp_label_key))
 
-        # Crop and resize images to be compatible with VGG encoder
-        self.img_dim = 224 # A bit ugly hardcoding needed based on VGG specifics
-        transform = StandardTransform(self.img_dim, to_tensor=True, normalize=True, square=True)
-        self.dataset = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
-                                transform=transform,
-                                label_keys=label_keys,
-                                iselector=self.inp_iselector)
+        # Resize, grid, and crop images to be compatible with VGG encoder
+        self.dataset = FungiImgGridCrop(csv_file=raw_csv_toc, root_dir=raw_csv_root,
+                                        iselector=self.inp_iselector,
+                                        selector=self.inp_selector)
         self.dataloader = DataLoader(self.dataset, batch_size=loader_batch_size,
                                      shuffle=True, num_workers=num_workers)
         self.dataset_size = len(self.dataset)
 
         self.model = AutoEncoderVGG()
-        self._dim_code = np.prod(list(self.model.dim_code(self.img_dim)))
 
     def set_optim(self, parameters, lr=0.01, momentum=0.9, scheduler_step_size=15, scheduler_gamma=0.1):
         '''Set what parameters to optimize and the meta-parameters of the optimizer
@@ -134,7 +132,7 @@ class _Runner(object):
 
             running_err = 0.0
             n_instances = 0
-            for inputs, label in self.dataloader:
+            for inputs in self.dataloader:
                 inputs = inputs.to(self.device)
 
                 # zero the parameter gradients
@@ -181,7 +179,7 @@ class RunnerCluster(_Runner):
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
-                       n_clusters=8):
+                       n_clusters=8, cluster_method='KMeans'):
 
         super(RunnerCluster, self).__init__(run_label, random_seed, f_out,
                                             raw_csv_toc, raw_csv_root,
@@ -191,9 +189,15 @@ class RunnerCluster(_Runner):
                                             lr_init, momentum,
                                             scheduler_step_size, scheduler_gamma)
 
-        # Initialize KMeans
+        # Initialize clustering method
         self.inp_n_clusters = n_clusters
-        self.cluster = KMeans(n_clusters=self.inp_n_clusters)
+        if cluster_method == 'KMeans':
+            self.cluster = KMeans(n_clusters=self.inp_n_clusters)
+        elif cluster_method == 'Agglomerative':
+            raise NotImplementedError('Agglomerative clustering not implemented')
+            self.cluster = AgglomerativeClustering(n_clusters=None, distance_threshold=0)
+        else:
+            raise ValueError('Unknown clustering method: {}'.format(cluster_method))
 
         # Define criterion and parameters to optimize (encoder and cluster centres)
         cluster_centers_init = torch.zeros((self.inp_n_clusters, self._dim_code), dtype=torch.float64)
@@ -302,7 +306,7 @@ class RunnerAE(_Runner):
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
                        raw_csv_toc='toc_full.csv', raw_csv_root='.',
                        save_tmp_name='model_in_progress',
-                       label_key='Kantarell', iselector=None,
+                       selector=None, iselector=None,
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
@@ -311,12 +315,11 @@ class RunnerAE(_Runner):
         super(RunnerAE, self).__init__(run_label, random_seed, f_out,
                                        raw_csv_toc, raw_csv_root,
                                        save_tmp_name,
-                                       label_key, iselector,
+                                       selector, iselector,
                                        loader_batch_size, num_workers,
                                        lr_init, momentum,
                                        scheduler_step_size, scheduler_gamma)
 
-        # Define criterion and optimizer
         self.criterion = nn.MSELoss()
         self.inp_freeze_encoder = freeze_encoder
         if self.inp_freeze_encoder:
@@ -330,7 +333,6 @@ class RunnerAE(_Runner):
                            scheduler_gamma=self.inp_scheduler_gamma,
                            parameters=self.model.parameters())
 
-        # Output the run parameters
         self.print_inp()
 
     def fetch_model(self, model_path):
@@ -358,7 +360,7 @@ class RunnerAE(_Runner):
 
         n = 0
         uu = UnTransform()
-        for inputs, labels in dloader:
+        for inputs in dloader:
             inputs = inputs.to(self.device)
             outputs = self.model(inputs)
             for out in outputs:
@@ -371,13 +373,34 @@ def progress_bar(current, total, barlength=20):
     spaces = ' ' * (barlength - len(arrow))
     print ('\rProgress: [{}{}]'.format(arrow, spaces), end='')
 
+def plot_dendrogram(model, **kwargs):
+    # Create linkage matrix and then plot the dendrogram
+
+    # create the counts of samples under each node
+    counts = np.zeros(model.children_.shape[0])
+    n_samples = len(model.labels_)
+    for i, merge in enumerate(model.children_):
+        current_count = 0
+        for child_idx in merge:
+            if child_idx < n_samples:
+                current_count += 1  # leaf node
+            else:
+                current_count += counts[child_idx - n_samples]
+        counts[i] = current_count
+
+    linkage_matrix = np.column_stack([model.children_, model.distances_,
+                                      counts]).astype(float)
+
+    # Plot the corresponding dendrogram
+    dendrogram(linkage_matrix, **kwargs)
+
 def test1():
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  loader_batch_size=16, iselector=[0,1,2,3,4,5],
-                  label_key='Kantarell', lr_init=0.01, freeze_encoder=True,
+                  loader_batch_size=64, iselector=[0,1,2,3,4,5],
+                  lr_init=0.01, freeze_encoder=True,
                   random_seed=79)
     r1.print_inp()
-    r1.train(30)
+    r1.train(2)
     r1.save_model_state('test1')
 
 def test2():
@@ -441,7 +464,7 @@ def test8():
                        lr_init=0.1, scheduler_step_size=4, scheduler_gamma=0.2,
                        n_clusters=15)
     r1.fetch_encoder('kantarell_ae_final')
-    r1.train(12)
+    r1.train(0)
     r1.save_model_state('cluster1')
     r1.fetch_encoder('cluster1')
     xx = r1.cluster_assignments()
@@ -458,5 +481,44 @@ def test8():
             save_image(img_, './clusters/{}/{}.png'.format(the_cluster, counter))
             counter += 1
 
+def test9():
+    r1 = RunnerCluster(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                       loader_batch_size=64,
+                       label_key='Kantarell and Fluesvamp',
+                       random_seed=79,
+                       lr_init=0.01, scheduler_step_size=4, scheduler_gamma=0.2,
+                       n_clusters=10)
+    r1.fetch_encoder('kantarell_flue_ae_final')
+    r1.train(3)
+    r1.save_model_state('cluster_kant_flue')
+    xx = r1.cluster_assignments()
+    cluster_assigns = list(xx.detach().numpy())
+    uu = UnTransform()
+    counter = 0
+    for inputs, labels in r1.dataloader:
+        for img in inputs:
+            img_ = uu(img)
+            the_cluster = cluster_assigns.pop(0)
+            save_image(img_, './clusters2/{}/{}.png'.format(the_cluster, counter))
+            counter += 1
 
-test8()
+def test10():
+    r1 = RunnerCluster(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                       loader_batch_size=64,
+                       label_key='Kantarell',
+                       random_seed=79,
+                       lr_init=0.01, scheduler_step_size=4, scheduler_gamma=0.2,
+                       n_clusters=10, cluster_method='Agglomerative')
+    r1.fetch_encoder('kantarell_ae_final')
+    r1.make_cluster_centroids()
+    uu = UnTransform()
+    counter = 0
+    for inputs, labels in r1.dataloader:
+        for img in inputs:
+            img_ = uu(img)
+            save_image(img_, './save_img/{}.png'.format(counter))
+            counter += 1
+
+
+
+test1()

@@ -370,22 +370,24 @@ def test1():
 
 def test2():
     r2 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                transform_imgs='standard_244',
+                transform_imgs='standard_300',
                 transforms_aug_train=['random_resized_crop'], f_test=0.15,
-                model_label='resnet101', label_key='Champignon vs Fluesvamp')
+                loader_batch_size=32,
+                model_label='inception_v3', label_key='Champignon vs Fluesvamp')
     r2.print_inp()
     print (r2.dataset_sizes)
     r2.train_model(21)
-    r2.save_model_state('save_champ_binary_aug1_resnet')
+    r2.save_model_state('save_champ_binary_aug1_inception_1')
 
     r2 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                transform_imgs='standard_244',
+                transform_imgs='standard_300',
                 transforms_aug_train=[], f_test=0.15,
-                model_label='resnet101', label_key='Champignon vs Fluesvamp')
+                loader_batch_size=32,
+                model_label='inception_v3', label_key='Champignon vs Fluesvamp')
     r2.print_inp()
     print (r2.dataset_sizes)
     r2.train_model(21)
-    r2.save_model_state('save_champ_binary_noaug_resnet')
+    r2.save_model_state('save_champ_binary_noaug_inception_1')
 
 def test3():
     r3 = Runner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',

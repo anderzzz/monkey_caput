@@ -9,6 +9,7 @@ Written By: Anders Ohrn, September 2020
 '''
 import torch
 import pandas as pd
+import numpy as np
 import os
 from skimage import io
 
@@ -40,21 +41,16 @@ class FungiImg(Dataset):
         self.img_toc = pd.read_csv(csv_file, index_col=(0,1,2,3,4,5,6,7,8))
         self.root_dir = root_dir
         self.transform = transform
+        self.label_keys = label_keys
 
-        # Discard data as if never present, like in creation of test and train data sets, either
-        # by row index or by an IndexSlice on the semantics of the MultiIndex
         if not selector is None:
             self.img_toc = self.img_toc.loc[selector]
         elif not iselector is None:
             self.img_toc = self.img_toc.iloc[iselector]
 
-        # Assign labels to data. This does not control for disjoint definitions or completeness
-        if not label_keys is None:
-            self.label_keys = label_keys
-        else:
-            species = self.img_toc.index.unique(level='Species')
-            self.label_keys = ['Species == "{}"'.format(sss) for sss in species]
-        self.img_toc = pd.concat(self._assign_label(self.label_keys))
+        # Extend the data table with labels if requested. This changes what the __getitem__ returns
+        if not self.label_keys is None:
+            self.img_toc = pd.concat(self._assign_label(self.label_keys))
 
         self.n_species = self._n_x('Species')
         self.n_genus = self._n_x('Genus')
@@ -69,13 +65,23 @@ class FungiImg(Dataset):
         return len(self.img_toc)
 
     def __getitem__(self, idx):
+        '''Get data of given index
+
+        Note that the method returns the image and/or the associated ground truth label depending on the `label_keys`
+        argument during initialization.
+
+        Returns:
+            image (Tensor): an image or images in the dataset
+            label: ground truth label or labels that specifies ground truth class of the image or images
+
+        '''
 
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
         row = self.img_toc.iloc[idx]
         img_name = row[0]
-        label = row[1]
+
         rel_path = list(row.name)[1:-1]
         rel_path.append(img_name)
         img_name = os.path.join(self.root_dir, *tuple(rel_path))
@@ -84,19 +90,41 @@ class FungiImg(Dataset):
         if not self.transform is None:
             image = self.transform(image)
 
-        return image, label
+        if not self.label_keys is None:
+            label = row[1]
+            return image, label
+        else:
+            return image
 
     def info_on_(self, idx):
         return self.img_toc.iloc[idx].name, self.img_toc.iloc[idx][0]
 
-    def _assign_label(self, l_keys):
-        '''Assign label to data based on family, genus, species selections'''
+    def _assign_label(self, l_keys, int_start=0):
+        '''Assign label to data based on family, genus, species selections
+
+        The label keys are query strings for Pandas, as described here:
+        https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.query.html
+
+        Each query string define a class. The query string can refer to individual species, genus, family etc. or
+        collections thereof. For example, the tuple `('Family == "Cantharellaceae"', 'Family == "Amanitaceae"')`
+        defines two labels for all fungi in either of the two families.
+
+        Args:
+            l_keys (iterable): list of query strings for Pandas DataFrame, where each query string defines a class to be
+                assigned a unique integer label.
+            int_start (int, optional): the first integer class label. Defaults to 0.
+
+        Returns:
+            category_slices (list): List of DataFrames each corresponding to the categories. The list can be
+                concatenated in order to form a single DataFrame
+
+        '''
         category_slices = []
         for label_int, query_label in enumerate(l_keys):
             subset_label = self.img_toc.query(query_label)
 
             if len(subset_label) > 0:
-                subset_label.loc[:, 'ClassLabel'] = label_int
+                subset_label.loc[:, 'ClassLabel'] = label_int + int_start
                 subset_label = subset_label.astype({'ClassLabel': 'int64'})
                 category_slices.append(subset_label)
 
@@ -114,6 +142,37 @@ class FungiImg(Dataset):
     def label_semantics(self):
         '''The dictionary that maps '''
         return dict([(count, label_select) for count, label_select in enumerate(self.label_keys)])
+
+
+class FungiImgGridCrop(Dataset):
+    '''Fungi image data set class, with each image a grid unit from the source image
+
+    Args:
+        Bla bla
+
+    '''
+    def __init__(self, csv_file, root_dir, selector=None, iselector=None,
+                 img_input_dim=224, img_n_splits=6, crop_step_size=32, crop_dim=64):
+
+        self.fungiimg = FungiImg(csv_file=csv_file, root_dir=root_dir,
+                                 selector=selector, iselector=iselector,
+                                 transform=None,
+                                 label_keys=None)
+        self.cropper = OverlapGridTransform(img_input_dim, img_n_splits, crop_step_size, crop_dim)
+
+    def __len__(self):
+        return self.cropper.n_blocks * self.fungiimg.__len__()
+
+    def __getitem__(self, idx):
+        '''Get data of given index
+
+        '''
+        idx_fungi = int(np.floor(idx / self.cropper.n_blocks))
+        idx_sub = idx % self.cropper.n_blocks
+        img = self.fungiimg.__getitem__(idx_fungi)
+        img_crops = self.cropper(img)
+
+        return img_crops[idx_sub]
 
 class StandardTransform(object):
     '''Standard Image Transforms, typically instantiated and provided to the DataSet class
@@ -175,3 +234,45 @@ class DataAugmentTransform(object):
     def __call__(self, img):
         return self.t_aug(self.basic_transform(img))
 
+class OverlapGridTransform(object):
+    '''Transformer of image to multiple images on partially overlapping grids
+
+    '''
+    def __init__(self, img_input_dim=224, img_n_splits=6, crop_step_size=32, crop_dim=64,
+                 norm_mean=[0.485, 0.456, 0.406], norm_std=[0.229, 0.224, 0.225]):
+
+        if not crop_dim + (img_n_splits - 1) * crop_step_size == img_input_dim:
+            raise ValueError('Image grid crop not possible: crop_dim + (img_n_splits - 1) * crop_step_size != img_input_dim')
+
+        pre_transforms = []
+        pre_transforms.append(transforms.ToPILImage())
+        pre_transforms.append(transforms.Resize(img_input_dim))
+        pre_transforms.append(transforms.CenterCrop(img_input_dim))
+        self.pre_transforms = transforms.Compose(pre_transforms)
+
+        post_transforms = []
+        post_transforms.append(transforms.ToTensor())
+        post_transforms.append(transforms.Normalize(norm_mean, norm_std))
+        self.post_transforms = transforms.Compose(post_transforms)
+
+        self.kwargs = []
+        h_indices = range(img_n_splits)
+        w_indices = range(img_n_splits)
+        for h in h_indices:
+            for w in w_indices:
+                self.kwargs.append({'top' : h * crop_step_size,
+                                    'left' : w * crop_step_size,
+                                    'height' : crop_dim,
+                                    'width' : crop_dim})
+
+        self.n_blocks = len(self.kwargs)
+
+    def __call__(self, img):
+
+        img_ = self.pre_transforms(img)
+        ret_imgs = []
+        for kwarg in self.kwargs:
+            img_crop = self.post_transforms(transforms.functional.crop(img_, **kwarg))
+            ret_imgs.append(img_crop)
+
+        return ret_imgs
