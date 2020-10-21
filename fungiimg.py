@@ -1,22 +1,22 @@
-'''Fungi Image Dataset class
-
-The class presupposes that the fungi data is organized in a table with headers:
-
-    Kingdom, Division, Subdivision, Class, Order, Family, Genus, Species, InstanceIndex, ImageName
+'''Fungi Image Dataset classes, including image transformations
 
 Written By: Anders Ohrn, September 2020
 
 '''
-import torch
 import pandas as pd
 import numpy as np
 import os
 from skimage import io
+from dataclasses import dataclass
 
 from enum import Enum
 
+import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
+
+class GridMakerError(Exception):
+    pass
 
 class RawData(Enum):
     '''Number of rows in the image raw data'''
@@ -27,13 +27,43 @@ class RawData(Enum):
 class FungiImg(Dataset):
     '''The Fungi Image Dataset Class
 
+    The class presupposes that the fungi data is organized in a CSV table with the headers:
+
+        `Kingdom, Division, Subdivision, Class, Order, Family, Genus, Species, InstanceIndex, ImageName`
+
+    An example instantiation that can be used for supervised training of binary classifier:
+        `FungiImg(csv_file='toc.csv', root_dir='./fungi_imgs',
+                  selector=pd.IndexSlice[:,:,:,:,:,['Cantharellaceae', 'Amanitaceae'],:,:,:],
+                  transform=StandardTransform(244, to_tensor=True, normalize=True),
+                  label_keys=('Family == "Cantharellaceae"', 'Family == "Amanitaceae"'))`
+
+    An example instantiation that can be used to access the first 100 images:
+        `FungiImg(csv_file='toc.csv', root_dir='./fungi_imgs',
+                  iselector=list(range(100)),
+                  transform=StandardTransform(244, to_tensor=True, normalize=True))`
+
     Args:
-        csv_file (string): Path to the csv file with annotations.
-        root_dir (string): Directory with all the images.
-        selector (IndexSlice, optional): Pandas IndexSlice that can select a subset of images
-            on basis of MultiIndex values
-        transform (callable, optional): Optional transform to be applied
-            on a sample.
+        csv_file (string): Path to the csv file with image meta data.
+        root_dir (string): Directory with all the images organized in subfolders.
+        selector (optional): Pandas IndexSlice or callable that is passed to the Pandas `.loc` method in
+            order to select a subset of images on basis of MultiIndex values. Defaults to None.
+        iselector (optional): Colletion of integer indices or callable that is passed to the Pandas `.iloc`
+            method in order to select a subset of images. This is applied after any `selector` filtering.
+        transform (callable, optional): Optional image transform to be applied. Defaults to None.
+        label_keys (iterable of str): Collection of strings pass to the Pandas `.query` method in order
+            to define subsets of the data that should be assigned integer class labels. If None, the
+            indexing of the class returns the image tensor object, if not None, the indexing of the class
+            returns the image tensor object and the integer class label.
+
+    Attributes:
+        n_species (int): Number of fungi species in DataSet
+        n_genus (int) : Number of fungi genus in DataSet
+        n_family (int) : Number of fungi families in DataSet
+        n_order (int) : Number of fungi orders in DataSet
+        n_instance_species (dict) : Number of instances of each fungi species in DataSet
+        n_instance_genus (dict) : Number of instances of each fungi genus in DataSet
+        n_instance_family (dict) : Number of instances of each fungi family in DataSet
+        n_instance_order (dict) : Number of instances of each fungi orders in DataSet
 
     '''
     def __init__(self, csv_file, root_dir, selector=None, iselector=None, transform=None, label_keys=None):
@@ -45,7 +75,8 @@ class FungiImg(Dataset):
 
         if not selector is None:
             self.img_toc = self.img_toc.loc[selector]
-        elif not iselector is None:
+
+        if not iselector is None:
             self.img_toc = self.img_toc.iloc[iselector]
 
         # Extend the data table with labels if requested. This changes what the __getitem__ returns
@@ -65,17 +96,17 @@ class FungiImg(Dataset):
         return len(self.img_toc)
 
     def __getitem__(self, idx):
-        '''Get data of given index
+        '''Get data of given index.
 
         Note that the method returns the image and/or the associated ground truth label depending on the `label_keys`
         argument during initialization.
 
         Returns:
             image (Tensor): an image or images in the dataset
-            label: ground truth label or labels that specifies ground truth class of the image or images
+            label: ground truth label or labels that specifies ground truth class of the image or images. This is
+                only returned if `label_keys` is not `None` in initialization.
 
         '''
-
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
@@ -145,10 +176,27 @@ class FungiImg(Dataset):
 
 
 class FungiImgGridCrop(Dataset):
-    '''Fungi image data set class, with each image a grid unit from the source image
+    '''Fungi image data set class, with each image a grid square slice from the source image
+
+    The class presupposes that the fungi data is organized in a CSV table with the headers:
+
+        `Kingdom, Division, Subdivision, Class, Order, Family, Genus, Species, InstanceIndex, ImageName`
 
     Args:
-        Bla bla
+        csv_file (string): Path to the csv file with image meta data.
+        root_dir (string): Directory with all the images organized in subfolders.
+        selector (optional): Pandas IndexSlice or callable that is passed to the Pandas `.loc` method in
+            order to select a subset of images on basis of MultiIndex values. Defaults to None.
+        iselector (optional): Colletion of integer indices or callable that is passed to the Pandas `.iloc`
+            method in order to select a subset of images. This is applied after any `selector` filtering.
+        img_input_dim (int): Length and height of square of source image to be sliced by grid.
+        img_n_splits (int): Number of slices per side, thus total number of slices for one source image
+            will be `img_n_splits * img_n_splits`.
+        crop_step_size (int): Number of pixels between grid lines
+        crop_dim (int): Length and height of grid squares.
+
+    Raises:
+        GridMakerError: In case the grid cropping specifications are not adding up
 
     '''
     def __init__(self, csv_file, root_dir, selector=None, iselector=None,
@@ -166,6 +214,9 @@ class FungiImgGridCrop(Dataset):
     def __getitem__(self, idx):
         '''Get data of given index
 
+        Returns:
+            image (Tensor): one or multiple image grid square units in the dataset
+
         '''
         idx_fungi = int(np.floor(idx / self.cropper.n_blocks))
         idx_sub = idx % self.cropper.n_blocks
@@ -174,82 +225,129 @@ class FungiImgGridCrop(Dataset):
 
         return img_crops[idx_sub]
 
+
+class ZScoreConsts(Enum):
+    '''Mean value to use for standard Z-score normalization, taken from https://pytorch.org/docs/stable/torchvision/models.html'''
+    Z_MEAN = [0.485, 0.456, 0.406]
+    '''Standard deviation values to use for standard Z-score normalization, taken from https://pytorch.org/docs/stable/torchvision/models.html'''
+    Z_STD = [0.229, 0.224, 0.225]
+
+
 class StandardTransform(object):
-    '''Standard Image Transforms, typically instantiated and provided to the DataSet class
+    '''Standard Image Transforms for pre-processing source image
+
+    Args:
+        min_dim (int): Length of shortest dimension of transformed image
+        to_tensor (bool): If True, the output will be a PyTorch tensor, else PIL Image
+        square (bool): If True, the source image (after resizing of shortest dimension) is cropped at the centre
+            such that output image is square
+        normalize (bool): If True, Z-score normalization is applied
+        norm_mean : mean value for normalization of the R,G,B channels
+        norm_std : std value for normalization of the R,G,B channels
 
     '''
     def __init__(self, min_dim=300, to_tensor=True, square=False,
-                 normalize=True, norm_mean=[0.485, 0.456, 0.406], norm_std=[0.229, 0.224, 0.225]):
+                 normalize=True, norm_mean=ZScoreConsts.Z_MEAN.value, norm_std=ZScoreConsts.Z_STD.value):
 
-        self.transforms = []
-        self.transforms.append(transforms.ToPILImage())
-        self.transforms.append(transforms.Resize(min_dim))
+        ts = [transforms.ToPILImage(), transforms.Resize(min_dim)]
         if square:
-            self.transforms.append(transforms.CenterCrop(min_dim))
+            ts.append(transforms.CenterCrop(min_dim))
         if to_tensor:
-            self.transforms.append(transforms.ToTensor())
+            ts.append(transforms.ToTensor())
         if normalize:
-            self.transforms.append(transforms.Normalize(norm_mean, norm_std))
+            ts.append(transforms.Normalize(norm_mean, norm_std))
 
-        self.t_total = transforms.Compose(self.transforms)
+        self.transform_total = transforms.Compose(ts)
 
     def __call__(self, img):
-        return self.t_total(img)
+        return self.transform_total(img)
 
-class UnTransform(object):
-    '''Invert standard image normalization
+
+class UnNormalizeTransform(object):
+    '''Invert standard image normalization. Typically used in order to create image representation to be saved for
+    visualization
+
+    Args:
+        norm_mean : mean value for normalization of the R,G,B channels
+        norm_std : std value for normalization of the R,G,B channels
 
     '''
-    def __init__(self, norm_mean=[0.485, 0.456, 0.406], norm_std=[0.229, 0.224, 0.225]):
-
-        self.transforms = []
-        self.transforms.append(transforms.Normalize(mean=[-m / s for m, s in zip(norm_mean, norm_std)],
-                                                    std=[1.0 / s for s in norm_std]))
-        self.t_total = transforms.Compose(self.transforms)
+    def __init__(self, norm_mean=ZScoreConsts.Z_MEAN.value, norm_std=ZScoreConsts.Z_STD.value):
+        self.transform_total = transforms.Normalize(mean=[-m / s for m, s in zip(norm_mean, norm_std)],
+                                                    std=[1.0 / s for s in norm_std])
 
     def __call__(self, img):
-        return self.t_total(img)
+        return self.transform_total(img)
+
 
 class DataAugmentTransform(object):
     '''Random Image Transforms for the purpose of data augmentation
 
-    This class is not fully general, and assumes the input images have width 50% greater than height. Reuse
-    this class with caution.
+    This class is not fully general, and assumes the input images have width 50% greater than height, which
+    is true for fungi image dataset. Reuse this class with caution.
+
+    Args:
+        augmentation_label (str): Short-hand label for the type of augmentation transform to perform
+        min_dim (int): Length of shortest dimension of transformed image
+        to_tensor (bool): If True, the output will be a PyTorch tensor, else PIL Image
+        normalize (bool): If True, Z-score normalization is applied
+        norm_mean : mean value for normalization of the R,G,B channels
+        norm_std : std value for normalization of the R,G,B channels
 
     '''
     def __init__(self, augmentation_label, min_dim=300, to_tensor=True,
-                 normalize=True, norm_mean=[0.485, 0.456, 0.406], norm_std=[0.229, 0.224, 0.225]):
+                 normalize=True, norm_mean=ZScoreConsts.Z_MEAN.value, norm_std=ZScoreConsts.Z_STD.value):
 
-        self.basic_transform = StandardTransform(min_dim, to_tensor, normalize, norm_mean, norm_std)
-
-        self.transforms = []
-        self.transforms.append(transforms.ToPILImage())
+        ts = [transforms.ToPILImage(), transforms.Resize(min_dim)]
         if augmentation_label == 'random_resized_crop':
-            self.transforms.append(transforms.RandomResizedCrop((min_dim, int(min_dim * 1.5)), scale=(0.67,1.0)))
+            ts.append(transforms.RandomResizedCrop((min_dim, int(min_dim * 1.5)), scale=(0.67,1.0)))
         elif augmentation_label == 'random_rotation':
-            self.transforms.append(transforms.RandomRotation(180.0))
-        self.transforms.append(transforms.ToTensor())
-        self.t_aug = transforms.Compose(self.transforms)
+            ts.append(transforms.RandomRotation(180.0))
+        else:
+            raise ValueError('Unknown augmentation label: {}'.format(augmentation_label))
+
+        if to_tensor:
+            ts.append(transforms.ToTensor())
+        if normalize:
+            ts.append(transforms.Normalize(norm_mean, norm_std))
+        self.transform_total = transforms.Compose(ts)
 
     def __call__(self, img):
-        return self.t_aug(self.basic_transform(img))
+        return self.transform_total(img)
 
 class OverlapGridTransform(object):
-    '''Transformer of image to multiple images on partially overlapping grids
+    '''Transformer of image to multiple image slices on a grid. The images slices can be overlapping.
+
+    In order for the slicing of the image to add up the following equality must hold:
+        `crop_dim + (img_n_splits - 1) * crop_step_size == img_input_dim`
+
+    Args:
+        img_input_dim (int): Length and height of square of source image to be sliced by grid. Defaults to 224.
+        img_n_splits (int): Number of slices per side, thus total number of slices for one source image
+            will be `img_n_splits * img_n_splits`. Defaults to 6.
+        crop_step_size (int): Number of pixels between grid lines. Defaults to 32.
+        crop_dim (int): Length and height of grid squares. Defaults to 64.
+        norm_mean : mean value for normalization of the R,G,B channels
+        norm_std : std value for normalization of the R,G,B channels
+
+    Raises:
+        GridMakerError: In case the grid cropping specifications are not adding up
 
     '''
     def __init__(self, img_input_dim=224, img_n_splits=6, crop_step_size=32, crop_dim=64,
-                 norm_mean=[0.485, 0.456, 0.406], norm_std=[0.229, 0.224, 0.225]):
+                 norm_mean=ZScoreConsts.Z_MEAN.value, norm_std=ZScoreConsts.Z_STD.value):
 
         if not crop_dim + (img_n_splits - 1) * crop_step_size == img_input_dim:
-            raise ValueError('Image grid crop not possible: crop_dim + (img_n_splits - 1) * crop_step_size != img_input_dim')
+            raise GridMakerError('Image grid crop not possible: crop_dim + (img_n_splits - 1) * crop_step_size != img_input_dim')
 
+        # Transformations of the source image: To PIL Image -> Resize shortest dimension -> Crop square at centre
         pre_transforms = []
         pre_transforms.append(transforms.ToPILImage())
         pre_transforms.append(transforms.Resize(img_input_dim))
         pre_transforms.append(transforms.CenterCrop(img_input_dim))
         self.pre_transforms = transforms.Compose(pre_transforms)
 
+        # Transformations of the sliced grid image: To Tensor -> Z-Score Normalize RGB Channels
         post_transforms = []
         post_transforms.append(transforms.ToTensor())
         post_transforms.append(transforms.Normalize(norm_mean, norm_std))
@@ -268,11 +366,5 @@ class OverlapGridTransform(object):
         self.n_blocks = len(self.kwargs)
 
     def __call__(self, img):
-
         img_ = self.pre_transforms(img)
-        ret_imgs = []
-        for kwarg in self.kwargs:
-            img_crop = self.post_transforms(transforms.functional.crop(img_, **kwarg))
-            ret_imgs.append(img_crop)
-
-        return ret_imgs
+        return [self.post_transforms(transforms.functional.crop(img_, **kwarg)) for kwarg in self.kwargs]
