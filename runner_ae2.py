@@ -11,6 +11,7 @@ import time
 import copy
 import numpy as np
 from numpy.random import seed, shuffle
+from pandas import IndexSlice
 
 import torch
 from torchvision.utils import save_image
@@ -22,7 +23,7 @@ from sklearn.cluster import KMeans, AgglomerativeClustering
 from scipy.cluster.hierarchy import dendrogram
 from matplotlib import pyplot as plt
 
-from fungiimg import FungiImgGridCrop, StandardTransform, UnTransform
+from fungiimg import FungiImgGridCrop, StandardTransform, UnNormalizeTransform
 from ae_deep import AutoEncoderVGG
 from cluster_utils import ClusterHardnessLoss
 
@@ -61,28 +62,17 @@ class _Runner(object):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
-        # Define the slices of image data to use
-#        if self.inp_label_key == 'Kantarell and Fluesvamp':
-#            label_keys = ('Family == "Cantharellaceae"', 'Family == "Amanitaceae"')
-#        elif self.inp_label_key == 'Kantarell':
-#            label_keys = ('Family == "Cantharellaceae"',)
-#        elif self.inp_label_key is None:
-#            label_keys = None
-#        else:
-#            raise ValueError('Unknown label_key: {}'.format(self.inp_label_key))
-
-        # Resize, grid, and crop images to be compatible with VGG encoder
+        # Initialize Dataset, DataLoader, and Model
         self.dataset = FungiImgGridCrop(csv_file=raw_csv_toc, root_dir=raw_csv_root,
                                         iselector=self.inp_iselector,
                                         selector=self.inp_selector)
         self.dataloader = DataLoader(self.dataset, batch_size=loader_batch_size,
                                      shuffle=True, num_workers=num_workers)
         self.dataset_size = len(self.dataset)
-
         self.model = AutoEncoderVGG()
 
     def set_optim(self, parameters, lr=0.01, momentum=0.9, scheduler_step_size=15, scheduler_gamma=0.1):
-        '''Set what parameters to optimize and the meta-parameters of the optimizer
+        '''Set what parameters to optimize and the meta-parameters of the SGD optimizer
 
         '''
         self.optimizer = optim.SGD(parameters, lr=lr, momentum=momentum)
@@ -103,13 +93,13 @@ class _Runner(object):
                 key = attr_name[4:]
                 print('{} : {}'.format(key, attr_value), file=self.inp_f_out)
 
-    def load_model_state(self, load_file_name):
-        '''Populate the Auto-Encoder model with state in file'''
+    def _load_model_state(self, load_file_name):
+        '''Populate the Auto-Encoder model with state on file'''
         dd = torch.load(load_file_name + '.tar')
         self.model.load_state_dict(dd['model_state_dict'])
 
     def save_model_state(self, save_file_name):
-        '''Save state on disk'''
+        '''Save Auto-Encoder model state on file'''
         torch.save({'model_state_dict': self.model.state_dict()},
                    save_file_name + '.tar')
 
@@ -127,8 +117,7 @@ class _Runner(object):
         self.model.train()
 
         for epoch in range(n_epochs):
-            print('Epoch {}/{}'.format(epoch, n_epochs - 1), file=self.inp_f_out)
-            print('-' * 10, file=self.inp_f_out)
+            print('Epoch {}/{}...'.format(epoch, n_epochs - 1), file=self.inp_f_out)
 
             running_err = 0.0
             n_instances = 0
@@ -175,7 +164,7 @@ class RunnerCluster(_Runner):
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
                        raw_csv_toc='toc_full.csv', raw_csv_root='.',
                        save_tmp_name='model_in_progress',
-                       label_key='Kantarell', iselector=None,
+                       selector=None, iselector=None,
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
@@ -184,7 +173,7 @@ class RunnerCluster(_Runner):
         super(RunnerCluster, self).__init__(run_label, random_seed, f_out,
                                             raw_csv_toc, raw_csv_root,
                                             save_tmp_name,
-                                            label_key, iselector,
+                                            selector, iselector,
                                             loader_batch_size, num_workers,
                                             lr_init, momentum,
                                             scheduler_step_size, scheduler_gamma)
@@ -199,8 +188,14 @@ class RunnerCluster(_Runner):
         else:
             raise ValueError('Unknown clustering method: {}'.format(cluster_method))
 
+        self._aggregator = torch.mean
+        self._aggregator_kwargs = {'dim' : (-2, -1)}
+        #self._aggregator = torch.flatten
+        #self._aggregator_kwargs = {'start_dim' : 1, 'end_dim' : -1}
+
+
         # Define criterion and parameters to optimize (encoder and cluster centres)
-        cluster_centers_init = torch.zeros((self.inp_n_clusters, self._dim_code), dtype=torch.float64)
+        cluster_centers_init = torch.zeros((self.inp_n_clusters, 512), dtype=torch.float64)
         self.criterion = ClusterHardnessLoss(cluster_centers_init)
         self.set_optim(lr=self.inp_lr_init,
                        scheduler_step_size=self.inp_scheduler_step_size,
@@ -218,7 +213,7 @@ class RunnerCluster(_Runner):
             ae_path (str): Path to file containing saved Auto-Encoder state from training with RunnerAE
 
         '''
-        self.load_model_state(ae_path)
+        self._load_model_state(ae_path)
         self.model.forward = self.model.forward_encoder
 
     def make_cluster_centroids(self, dloader=None):
@@ -236,9 +231,13 @@ class RunnerCluster(_Runner):
             dloader = self.dataloader
 
         all_codes = []
-        for inputs, labels in dloader:
+        n=0
+        for inputs in dloader:
+            print ('{}/{}'.format(n*self.inp_loader_batch_size, self.dataset_size))
+            n+=1
             codes, _ = self.model.forward(inputs)
-            all_codes.append(codes.view(codes.shape[0], -1).detach().numpy()) # Only keep raw numeric data
+            codes = self._aggregator(codes, **self._aggregator_kwargs)
+            all_codes.append(codes.detach().numpy()) # Only keep raw numeric data
 
         cxnp = np.concatenate(all_codes, axis=0)
         self.cluster_out = self.cluster.fit(cxnp)
@@ -295,6 +294,7 @@ class RunnerCluster(_Runner):
             loss : The loss as computed by the criterion
         '''
         outputs, _ = self.model(inputs)
+        outputs = self._aggregator(outputs, **self._aggregator_kwargs)
         loss = self.criterion(outputs)
 
         return loss
@@ -335,9 +335,9 @@ class RunnerAE(_Runner):
 
         self.print_inp()
 
-    def fetch_model(self, model_path):
+    def fetch_ae(self, model_path):
         '''Populate model with a pre-trained Auto-encoder'''
-        self.load_model_state(model_path)
+        self._load_model_state(model_path)
 
     def train(self, n_epochs):
         '''Train model for set number of epochs'''
@@ -359,12 +359,12 @@ class RunnerAE(_Runner):
             dloader = custom_dataloader
 
         n = 0
-        uu = UnTransform()
+        uu = UnNormalizeTransform()
         for inputs in dloader:
             inputs = inputs.to(self.device)
             outputs = self.model(inputs)
             for out in outputs:
-                save_image(uu(out), 'test_img_{}.png'.format(n))
+                save_image(uu(out), 'eval_img_{}.png'.format(n))
                 n += 1
 
 def progress_bar(current, total, barlength=20):
@@ -404,81 +404,52 @@ def test1():
     r1.save_model_state('test1')
 
 def test2():
+    tt = IndexSlice[:,:,:,:,:,['Cantharellaceae'],:,:,:]
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  loader_batch_size=16, iselector=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14],
-                  label_key='Kantarell', lr_init=0.001, scheduler_step_size=30, freeze_encoder=True,
+                  loader_batch_size=128, selector=tt,
+                  iselector=list(range(100)),
+                  lr_init=0.03, scheduler_step_size=10,
+                  freeze_encoder=False,
                   random_seed=79)
     r1.print_inp()
-    r1.fetch_model('test1')
-    r1.train(60)
+    r1.fetch_ae('tmp')
+    r1.train(30)
     r1.save_model_state('test2')
 
 def test3():
+    tt = IndexSlice[:,:,:,:,:,['Cantharellaceae','Amanitaceae'],:,:,:]
+    v1 = list(range(759))
+    v2 = list(range(759,2429))
+    shuffle(v1)
+    shuffle(v2)
+    vv = v1[:150] + v2[:150]
+    r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                  loader_batch_size=64, selector=tt, iselector=vv,
+                  lr_init=0.01, scheduler_step_size=6,
+                  freeze_encoder=False,
+                  random_seed=79)
+    r1.print_inp()
+    r1.fetch_ae('tmp')
+    r1.train(18)
+    r1.save_model_state('test3')
+
+def test4():
+    tt = IndexSlice[:,:,:,:,:,['Cantharellaceae'],:,:,:]
     r1 = RunnerCluster(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                       loader_batch_size=16, iselector=[0,1,2,3,4,5,6,7,8,9],
-                       label_key='Kantarell', lr_init=0.01, n_clusters=3,
-                       random_seed=79)
-    r1.print_inp()
-    r1.fetch_encoder('test2')
-    r1.train(3)
-    dloader = DataLoader(r1.dataset, shuffle=False)
-    cass = r1.cluster_assignments(dloader)
-    print (cass)
-    img_meta, img_filename = r1.dataset.info_on_(0)
-
-def test6():
-    r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  loader_batch_size=16,
-                  label_key='Kantarell', lr_init=0.01, scheduler_step_size=15, freeze_encoder=False,
-                  random_seed=79)
-    r1.print_inp()
-    r1.fetch_model('test5')
-    r1.train(30)
-    r1.save_model_state('test6')
-
-def test5():
-    r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  loader_batch_size=16, iselector=list(range(16)),
-                  label_key='Kantarell', lr_init=0.001, scheduler_step_size=20, freeze_encoder=False,
-                  random_seed=79)
-    r1.print_inp()
-    r1.fetch_model('model_in_progress')
-    r1.train(60)
-    r1.save_model_state('test5')
-
-def test7():
-    rando = list(range(160))
-    shuffle(rando)
-    r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                  loader_batch_size=16, iselector=rando[0:16],
-                  label_key='Kantarell',
-                  random_seed=79)
-    r1.fetch_model('kantarell_ae_final')
-    r1.eval_model()
-
-def test8():
-    r1 = RunnerCluster(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                       loader_batch_size=64,
-                       label_key='Kantarell',
-                       random_seed=79,
-                       lr_init=0.1, scheduler_step_size=4, scheduler_gamma=0.2,
-                       n_clusters=15)
-    r1.fetch_encoder('kantarell_ae_final')
-    r1.train(0)
-    r1.save_model_state('cluster1')
-    r1.fetch_encoder('cluster1')
+                       selector=tt, n_clusters=15, cluster_method='KMeans',
+                       loader_batch_size=128)
+    r1.fetch_encoder('kantflue_grid_ae')
     xx = r1.cluster_assignments()
     torch.save({'assignments' : xx,
                 'vecs' : r1.cluster_out.cluster_centers_}, 'cluster.tar')
-    #xx = torch.load('cluster.tar')
     cluster_assigns = list(xx.detach().numpy())
-    uu = UnTransform()
+    uu = UnNormalizeTransform()
     counter = 0
-    for inputs, labels in r1.dataloader:
+    for inputs in r1.dataloader:
         for img in inputs:
             img_ = uu(img)
             the_cluster = cluster_assigns.pop(0)
-            save_image(img_, './clusters/{}/{}.png'.format(the_cluster, counter))
+            save_image(img_, './clusters_grid/{}/{}.png'.format(the_cluster, counter))
             counter += 1
 
 def test9():
@@ -521,4 +492,4 @@ def test10():
 
 
 
-test1()
+test4()
