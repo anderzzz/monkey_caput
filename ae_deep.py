@@ -3,7 +3,6 @@
 Written By: Anders Ohrn, September 2020
 
 '''
-import torch
 from torch import nn
 from torchvision import models
 
@@ -11,6 +10,10 @@ class AutoEncoderVGG(nn.Module):
     '''Auto-Encoder based on the VGG-16 with batch normalization template model
 
     '''
+    channels_in = 3
+    channels_code = 512
+    channels_out = 3
+
     def __init__(self):
         super(AutoEncoderVGG, self).__init__()
 
@@ -22,9 +25,24 @@ class AutoEncoderVGG(nn.Module):
         self.encoder = self._encodify_(vgg)
         self.decoder = self._invert_(self.encoder)
 
-    def dim_code(self, img_dim):
-        '''Convenience function to provide dimension of code given a square image of specified size'''
-        return self.forward_encoder(torch.zeros((1, 3, img_dim, img_dim)))[0].shape
+    @staticmethod
+    def dim_code(img_dim):
+        '''Convenience function to provide dimension of code given a square image of specified size. The transformation
+        is defined by the details of the VGG method. The aim should be to resize the image to produce an integer
+        code dimension.
+
+        Args:
+            img_dim (int): Height/width dimension of the tentative square image to input to the auto-encoder
+
+        Returns:
+            code_dim (float): Height/width dimension of the code
+            int_value (bool): If False, the tentative image dimension will not produce an integer dimension for the
+                code. If True it will. For actual applications, this value should be True.
+
+        '''
+        value = img_dim / 2**5
+        int_value = img_dim % 2**5 == 0
+        return value, int_value
 
     def forward_encoder(self, x):
         '''Execute the encoder on the image input

@@ -168,7 +168,8 @@ class RunnerCluster(_Runner):
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
-                       n_clusters=8, cluster_method='KMeans'):
+                       n_clusters=8, cluster_method='KMeans',
+                       code_merger='mean', dim_img=64):
 
         super(RunnerCluster, self).__init__(run_label, random_seed, f_out,
                                             raw_csv_toc, raw_csv_root,
@@ -178,8 +179,11 @@ class RunnerCluster(_Runner):
                                             lr_init, momentum,
                                             scheduler_step_size, scheduler_gamma)
 
-        # Initialize clustering method
         self.inp_n_clusters = n_clusters
+        self.inp_ckuster_method = cluster_method
+        self.inp_code_merger = code_merger
+        self.inp_dim_img = dim_img
+
         if cluster_method == 'KMeans':
             self.cluster = KMeans(n_clusters=self.inp_n_clusters)
         elif cluster_method == 'Agglomerative':
@@ -188,21 +192,29 @@ class RunnerCluster(_Runner):
         else:
             raise ValueError('Unknown clustering method: {}'.format(cluster_method))
 
-        self._aggregator = torch.mean
-        self._aggregator_kwargs = {'dim' : (-2, -1)}
-        #self._aggregator = torch.flatten
-        #self._aggregator_kwargs = {'start_dim' : 1, 'end_dim' : -1}
+        code_hw, valid_int = AutoEncoderVGG.dim_code(self.inp_dim_img)
+        if not valid_int:
+            raise ValueError('The image input dimension {} will not lead to integer code dimension'.format(dim_img))
 
+        if self.inp_code_merger == 'mean':
+            self._aggregator = torch.mean
+            self._aggregator_kwargs = {'dim' : (-2, -1)}
+            self.cluster_code_dim = AutoEncoderVGG.channels_code
+        elif self.inp_code_merger == 'flatten':
+            self._aggregator = torch.flatten
+            self._aggregator_kwargs = {'start_dim' : 1, 'end_dim' : -1}
+            self.cluster_code_dim = AutoEncoderVGG.channels_code * int(code_hw) ** 2
+        else:
+            raise ValueError('Unknown code merger method: {}'.format(self.inp_code_merger))
 
         # Define criterion and parameters to optimize (encoder and cluster centres)
-        cluster_centers_init = torch.zeros((self.inp_n_clusters, 512), dtype=torch.float64)
+        cluster_centers_init = torch.zeros((self.inp_n_clusters, self.cluster_code_dim), dtype=torch.float64)
         self.criterion = ClusterHardnessLoss(cluster_centers_init)
         self.set_optim(lr=self.inp_lr_init,
                        scheduler_step_size=self.inp_scheduler_step_size,
                        scheduler_gamma=self.inp_scheduler_gamma,
                        parameters=list(self.model.encoder.parameters()) + list(self.criterion.parameters()))
 
-        # Output the run parameters
         self.print_inp()
 
     def fetch_encoder(self, ae_path):
@@ -235,7 +247,7 @@ class RunnerCluster(_Runner):
         for inputs in dloader:
             print ('{}/{}'.format(n*self.inp_loader_batch_size, self.dataset_size))
             n+=1
-            codes, _ = self.model.forward(inputs)
+            codes, _ = self.model(inputs)
             codes = self._aggregator(codes, **self._aggregator_kwargs)
             all_codes.append(codes.detach().numpy()) # Only keep raw numeric data
 
@@ -434,10 +446,10 @@ def test3():
     r1.save_model_state('test3')
 
 def test4():
-    tt = IndexSlice[:,:,:,:,:,['Cantharellaceae'],:,:,:]
+    tt = IndexSlice[:,:,:,:,:,['Cantharellaceae','Amanitaceae'],:,:,:]
     r1 = RunnerCluster(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                        selector=tt, n_clusters=15, cluster_method='KMeans',
-                       loader_batch_size=128)
+                       loader_batch_size=128, dim_img=64)
     r1.fetch_encoder('kantflue_grid_ae')
     xx = r1.cluster_assignments()
     torch.save({'assignments' : xx,
