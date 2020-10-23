@@ -20,6 +20,7 @@ from torch import nn
 from torch import optim
 
 from sklearn.cluster import KMeans, AgglomerativeClustering
+from sklearn.metrics import pairwise_distances
 from scipy.cluster.hierarchy import dendrogram
 from matplotlib import pyplot as plt
 
@@ -67,7 +68,7 @@ class _Runner(object):
                                         iselector=self.inp_iselector,
                                         selector=self.inp_selector)
         self.dataloader = DataLoader(self.dataset, batch_size=loader_batch_size,
-                                     shuffle=True, num_workers=num_workers)
+                                     shuffle=False, num_workers=num_workers)
         self.dataset_size = len(self.dataset)
         self.model = AutoEncoderVGG()
 
@@ -180,13 +181,13 @@ class RunnerCluster(_Runner):
                                             scheduler_step_size, scheduler_gamma)
 
         self.inp_n_clusters = n_clusters
-        self.inp_ckuster_method = cluster_method
+        self.inp_cluster_method = cluster_method
         self.inp_code_merger = code_merger
         self.inp_dim_img = dim_img
 
-        if cluster_method == 'KMeans':
+        if self.inp_cluster_method == 'KMeans':
             self.cluster = KMeans(n_clusters=self.inp_n_clusters)
-        elif cluster_method == 'Agglomerative':
+        elif self.inp_cluster_method == 'Agglomerative':
             raise NotImplementedError('Agglomerative clustering not implemented')
             self.cluster = AgglomerativeClustering(n_clusters=None, distance_threshold=0)
         else:
@@ -252,6 +253,9 @@ class RunnerCluster(_Runner):
             all_codes.append(codes.detach().numpy()) # Only keep raw numeric data
 
         cxnp = np.concatenate(all_codes, axis=0)
+        print (cxnp.shape)
+        ttt=pairwise_distances(cxnp, metric='correlation')
+        torch.save(ttt, 'dists.npy')
         self.cluster_out = self.cluster.fit(cxnp)
 
         return torch.from_numpy(self.cluster_out.cluster_centers_)
@@ -447,8 +451,13 @@ def test3():
 
 def test4():
     tt = IndexSlice[:,:,:,:,:,['Cantharellaceae','Amanitaceae'],:,:,:]
+    v1 = list(range(759))
+    v2 = list(range(759,2429))
+    shuffle(v1)
+    shuffle(v2)
+    vv = v1[:200] + v2[:200]
     r1 = RunnerCluster(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                       selector=tt, n_clusters=15, cluster_method='KMeans',
+                       selector=tt, iselector=vv, n_clusters=15, cluster_method='KMeans',
                        loader_batch_size=128, dim_img=64)
     r1.fetch_encoder('kantflue_grid_ae')
     xx = r1.cluster_assignments()
@@ -462,6 +471,82 @@ def test4():
             img_ = uu(img)
             the_cluster = cluster_assigns.pop(0)
             save_image(img_, './clusters_grid/{}/{}.png'.format(the_cluster, counter))
+            counter += 1
+
+def test5():
+    tt = IndexSlice[:,:,:,:,:,['Cantharellaceae','Amanitaceae'],:,:,:]
+    v1 = list(range(759))
+    v2 = list(range(759,2429))
+    shuffle(v1)
+    shuffle(v2)
+    vv = v1[:200] + v2[:200]
+    r1 = RunnerCluster(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                       selector=tt, iselector=vv, n_clusters=30, cluster_method='KMeans',
+                       loader_batch_size=128, dim_img=64, momentum=0.99,
+                       lr_init=0.10, scheduler_step_size=2, scheduler_gamma=0.25)
+    r1.fetch_encoder('kantflue_grid_ae')
+    #r1.train(9)
+    #r1._load_model_state('model_in_progress.tar')
+    xx = r1.cluster_assignments()
+    torch.save({'assignments' : xx,
+                'vecs' : r1.cluster_out.cluster_centers_}, 'cluster.tar')
+    cluster_assigns = list(xx.detach().numpy())
+    uu = UnNormalizeTransform()
+    counter = 0
+    for inputs in r1.dataloader:
+        for img in inputs:
+            img_ = uu(img)
+            the_cluster = cluster_assigns.pop(0)
+            save_image(img_, './clusters_grid/{}/{}.png'.format(the_cluster, counter))
+            counter += 1
+
+def test6():
+    tt = IndexSlice[:,:,:,:,:,['Cantharellaceae','Amanitaceae'],:,:,:]
+    v1 = list(range(759))
+    v2 = list(range(759,2429))
+    #shuffle(v1)
+    #shuffle(v2)
+    vv = v1[:1] + v2[:20]
+    r1 = RunnerCluster(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                       selector=tt, iselector=vv, n_clusters=3, cluster_method='KMeans',
+                       loader_batch_size=128, dim_img=64, code_merger='flatten',
+                       lr_init=0.01, scheduler_step_size=4, scheduler_gamma=0.1)
+    r1.fetch_encoder('kantflue_grid_ae')
+    r1._load_model_state('model_in_progress2')
+    xx = r1.cluster_assignments()
+    torch.save({'assignments' : xx,
+                'vecs' : r1.cluster_out.cluster_centers_}, 'cluster.tar')
+    cluster_assigns = list(xx.detach().numpy())
+    uu = UnNormalizeTransform()
+    counter = 0
+    for inputs in r1.dataloader:
+        for img in inputs:
+            img_ = uu(img)
+            the_cluster = cluster_assigns.pop(0)
+            save_image(img_, './dummy_grid/{}/{}.png'.format(the_cluster, counter))
+            counter += 1
+
+def test7():
+    tt = IndexSlice[:,:,:,:,:,['Cantharellaceae','Amanitaceae'],:,:,:]
+    v1 = list(range(759))
+    v2 = list(range(759,2429))
+    #shuffle(v1)
+    #shuffle(v2)
+    vv = v1[:1] + v2[:20]
+    r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                  loader_batch_size=64, selector=tt, iselector=vv,
+                  lr_init=0.01, scheduler_step_size=6,
+                  freeze_encoder=False,
+                  random_seed=79)
+    r1.fetch_ae('kantflue_grid_ae')
+    uu = UnNormalizeTransform()
+    counter = 0
+    for inputs in r1.dataloader:
+        out=r1.model(inputs)
+        print (out.shape)
+        for ooo in out:
+            ooo_ = uu(ooo)
+            save_image(ooo_, './test_ae/{}.png'.format(counter))
             counter += 1
 
 def test9():
@@ -504,4 +589,4 @@ def test10():
 
 
 
-test4()
+test5()
