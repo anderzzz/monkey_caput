@@ -6,45 +6,21 @@ Written By: Anders Ohrn, September 2020
 from torch import nn
 from torchvision import models
 
-class AutoEncoderVGG(nn.Module):
-    '''Auto-Encoder based on the VGG-16 with batch normalization template model
+class EncoderVGG(nn.Module):
 
-    '''
     channels_in = 3
     channels_code = 512
-    channels_out = 3
 
-    def __init__(self):
-        super(AutoEncoderVGG, self).__init__()
+    def __init__(self, pretrained_params=True):
+        super(EncoderVGG, self).__init__()
 
-        # Load the pre-trained VGG-16 model and remove the final classifier layer
-        vgg = models.vgg16_bn(pretrained=True)
+        vgg = models.vgg16_bn(pretrained=pretrained_params)
         del vgg.classifier
         del vgg.avgpool
 
         self.encoder = self._encodify_(vgg)
-        self.decoder = self._invert_(self.encoder)
 
-    @staticmethod
-    def dim_code(img_dim):
-        '''Convenience function to provide dimension of code given a square image of specified size. The transformation
-        is defined by the details of the VGG method. The aim should be to resize the image to produce an integer
-        code dimension.
-
-        Args:
-            img_dim (int): Height/width dimension of the tentative square image to input to the auto-encoder
-
-        Returns:
-            code_dim (float): Height/width dimension of the code
-            int_value (bool): If False, the tentative image dimension will not produce an integer dimension for the
-                code. If True it will. For actual applications, this value should be True.
-
-        '''
-        value = img_dim / 2**5
-        int_value = img_dim % 2**5 == 0
-        return value, int_value
-
-    def forward_encoder(self, x):
+    def forward(self, x):
         '''Execute the encoder on the image input
 
         Args:
@@ -69,46 +45,24 @@ class AutoEncoderVGG(nn.Module):
 
         return x_current, pool_indices
 
-    def forward_decoder(self, x, pool_indices):
-        '''Execute the decoder on the code tensor input
+    @staticmethod
+    def dim_code(img_dim):
+        '''Convenience function to provide dimension of code given a square image of specified size. The transformation
+        is defined by the details of the VGG method. The aim should be to resize the image to produce an integer
+        code dimension.
 
         Args:
-            x (Tensor): code tensor obtained from encoder
-            pool_indices (list): Pool indices Pytorch tensors in order the pooling modules in the encoder
+            img_dim (int): Height/width dimension of the tentative square image to input to the auto-encoder
 
         Returns:
-            x (Tensor): decoded image tensor
+            code_dim (float): Height/width dimension of the code
+            int_value (bool): If False, the tentative image dimension will not produce an integer dimension for the
+                code. If True it will. For actual applications, this value should be True.
 
         '''
-        x_current = x
-
-        k_pool = 0
-        reversed_pool_indices = list(reversed(pool_indices))
-        for module_decode in self.decoder:
-
-            # If the module is unpooling, collect the appropriate pooling indices
-            if isinstance(module_decode, nn.MaxUnpool2d):
-                x_current = module_decode(x_current, indices=reversed_pool_indices[k_pool])
-                k_pool += 1
-            else:
-                x_current = module_decode(x_current)
-
-        return x_current
-
-    def forward(self, x):
-        '''Forward the autoencoder for image input
-
-        Args:
-            x (Tensor): image tensor
-
-        Returns:
-            x_prime (Tensor): image tensor following encoding and decoding
-
-        '''
-        code, pool_indices = self.forward_encoder(x)
-        x_prime = self.forward_decoder(code, pool_indices)
-
-        return x_prime
+        value = img_dim / 2**5
+        int_value = img_dim % 2**5 == 0
+        return value, int_value
 
     def _encodify_(self, encoder):
         '''Create list of modules for encoder based on the architecture in VGG template model.
@@ -136,6 +90,43 @@ class AutoEncoderVGG(nn.Module):
                 modules.append(module)
 
         return modules
+
+
+class DecoderVGG(nn.Module):
+
+    channels_in = EncoderVGG.channels_code
+    channels_out = 3
+
+    def __init__(self, encoder):
+        super(DecoderVGG, self).__init__()
+
+        self.decoder = self._invert_(encoder)
+
+    def forward(self, x, pool_indices):
+        '''Execute the decoder on the code tensor input
+
+        Args:
+            x (Tensor): code tensor obtained from encoder
+            pool_indices (list): Pool indices Pytorch tensors in order the pooling modules in the encoder
+
+        Returns:
+            x (Tensor): decoded image tensor
+
+        '''
+        x_current = x
+
+        k_pool = 0
+        reversed_pool_indices = list(reversed(pool_indices))
+        for module_decode in self.decoder:
+
+            # If the module is unpooling, collect the appropriate pooling indices
+            if isinstance(module_decode, nn.MaxUnpool2d):
+                x_current = module_decode(x_current, indices=reversed_pool_indices[k_pool])
+                k_pool += 1
+            else:
+                x_current = module_decode(x_current)
+
+        return x_current
 
     def _invert_(self, encoder):
         '''Invert the encoder in order to create the decoder as a (more or less) mirror image of the encoder
@@ -174,3 +165,50 @@ class AutoEncoderVGG(nn.Module):
         modules_transpose = modules_transpose[:-2]
 
         return nn.ModuleList(modules_transpose)
+
+
+class AutoEncoderVGG(nn.Module):
+    '''Auto-Encoder based on the VGG-16 with batch normalization template model
+
+    '''
+    channels_in = EncoderVGG.channels_in
+    channels_code = EncoderVGG.channels_code
+    channels_out = DecoderVGG.channels_out
+
+    def __init__(self, pretrained_params=True):
+        super(AutoEncoderVGG, self).__init__()
+
+        self.encoder = EncoderVGG(pretrained_params=pretrained_params)
+        self.decoder = DecoderVGG(self.encoder.encoder)
+
+    @staticmethod
+    def dim_code(img_dim):
+        '''Convenience function to provide dimension of code given a square image of specified size. The transformation
+        is defined by the details of the VGG method. The aim should be to resize the image to produce an integer
+        code dimension.
+
+        Args:
+            img_dim (int): Height/width dimension of the tentative square image to input to the auto-encoder
+
+        Returns:
+            code_dim (float): Height/width dimension of the code
+            int_value (bool): If False, the tentative image dimension will not produce an integer dimension for the
+                code. If True it will. For actual applications, this value should be True.
+
+        '''
+        return EncoderVGG.dim_code(img_dim)
+
+    def forward(self, x):
+        '''Forward the autoencoder for image input
+
+        Args:
+            x (Tensor): image tensor
+
+        Returns:
+            x_prime (Tensor): image tensor following encoding and decoding
+
+        '''
+        code, pool_indices = self.encoder(x)
+        x_prime = self.decoder(code, pool_indices)
+
+        return x_prime
