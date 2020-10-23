@@ -5,6 +5,183 @@ Written By: Anders Ohrn, September 2020
 '''
 import torch
 from torch import nn
+import torch.nn.functional as F
+
+import numpy as np
+
+from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import normalize
+from scipy.spatial.distance import cosine as cosine_distance
+
+from functools import reduce
+
+class VectorUpdateError(Exception):
+    pass
+
+def marsaglia(sphere_dim):
+    '''Method to generate a point uniformly distributed on the (N-1) sphere by Marsaglia
+
+    Args:
+        sphere_dim (int): dimension of the sphere on which to generate the point
+
+    '''
+    norm_vals = np.random.standard_normal(sphere_dim)
+    return norm_vals / np.linalg.norm(norm_vals)
+
+class MemoryBank(object):
+    '''Bla bla
+
+    '''
+    def __init__(self, n_vectors, dim_vector, memory_mixing_rate=None):
+
+        self.dim_vector = dim_vector
+        self.memory_vectors = np.array([marsaglia(dim_vector) for _ in range(n_vectors)])
+        self.memory_mixing_rate = memory_mixing_rate
+
+    def update_memory(self, vectors, index, memory_mixing_rate=None):
+
+        if not memory_mixing_rate is None:
+            self.memory_mixing_rate = memory_mixing_rate
+
+        if isinstance(index, int):
+            self.memory_vectors[index] = self._update_(vectors, self.memory_vectors[index])
+
+        elif isinstance(index, np.ndarray):
+            for ind, vector in zip(index, vectors):
+                self.memory_vectors[ind] = self._update_(vector, self.memory_vectors[ind])
+
+        else:
+            raise RuntimeError('Index must be of type integer or NumPy array, not {}'.format(type(index)))
+
+    def __getitem__(self, idx):
+        return torch.tensor(self.memory_vectors[idx], requires_grad=False)
+
+    def _update_(self, vector_new, vector_recall):
+        return vector_new * self.memory_mixing_rate + vector_recall * (1.0 - self.memory_mixing_rate)
+
+    def _verify_dim_(self, vector_new):
+        if len(vector_new) != self.dim_vector:
+            raise VectorUpdateError('Update vector of dimension size {}, '.format(len(vector_new)) + \
+                                    'but memory of dimension size {}'.format(self.dim_vector))
+
+class LocalAggregationLoss(nn.Module):
+    '''Bla bla
+
+    '''
+    def __init__(self, temperature,
+                 k_nearest_neighbours, clustering_repeats, number_of_centroids,
+                 memory_bank):
+        super(LocalAggregationLoss, self).__init__()
+
+        self.temperature = temperature
+        self.memory_bank = memory_bank
+
+        self.background_neighbours = None
+        self.close_neighbours = None
+
+        self.neighbour_finder = NearestNeighbors(n_neighbors=k_nearest_neighbours + 1,
+                                                 algorithm='ball_tree', metric=cosine_distance)
+        self.clusterer = []
+        for k_clusterer in range(clustering_repeats):
+            self.clusterer.append(KMeans(n_clusters=number_of_centroids,
+                                         init='random', n_init=1))
+
+    def nearest_neighbours(self, codes, indices):
+        '''Bla bla
+
+        '''
+        self.neighbour_finder.fit(self.memory_bank.memory_vectors)
+
+        indices_nearest = self.neighbour_finder.kneighbors(codes, return_distance=False)
+        self_neighbour_masks = [np.where(indices_nearest[k] == indices[k]) for k in range(indices_nearest.shape[0])]
+
+        if any([len(x) != 1 for x in self_neighbour_masks]):
+            raise RuntimeError('Self neighbours not correctly shaped')
+
+        return np.delete(indices_nearest, self_neighbour_masks, axis=1)
+
+    def close_grouper(self, indices):
+        '''Bla bla
+
+        '''
+        memberships = [[]] * len(indices)
+        for clusterer in self.clusterer:
+            clusterer.fit(self.memory_bank.memory_vectors)
+            for k_index, cluster_index in enumerate(clusterer.labels_[indices]):
+                other_members = np.where(clusterer.labels_ == cluster_index)[0]
+                other_members_union = np.union1d(memberships[k_index], other_members)
+                memberships[k_index] = other_members_union.astype(int)
+
+        return np.array(memberships)
+
+    def intersecter(self, n1, n2):
+        ret = []
+        for n1_x, n2_x in zip(n1, n2):
+            x = list(set(n1_x).intersection(n2_x))
+            ret.append(x)
+        return ret
+
+    def forward(self, codes, indices):
+        '''Bla bla
+
+        '''
+        assert codes.shape[0] == len(indices)
+
+        code_data = normalize(codes.detach().numpy(), axis=1)
+        self.memory_bank.update_memory(code_data, indices)
+        self.background_neighbours = self.nearest_neighbours(code_data, indices)
+        self.close_neighbours = self.close_grouper(indices)
+        self.neighbour_intersect = self.intersecter(self.background_neighbours, self.close_neighbours)
+        print (self.background_neighbours)
+        print (self.close_neighbours)
+        print (self.neighbour_intersect)
+
+        v = F.normalize(codes, p=2, dim=1)
+        print (v)
+        d1 = self._prob_density(v, self.background_neighbours)
+        d2 = self._prob_density(v, self.neighbour_intersect)
+
+        loss_cluster = torch.log(d1) - torch.log(d2)
+        print (loss_cluster)
+        raise RuntimeError
+
+    def _prob_density(self, codes, indices):
+        '''Bla bla
+
+        '''
+        # In case the indices are all of the same dimension, broadcasting can be used and the
+        # batch dimension is handled concisely.
+        if len(set([len(x) for x in indices])) == 1:
+            vals = self.memory_bank[indices]
+            v_dots = torch.bmm(vals, codes.unsqueeze(-1))
+            exp_values = torch.exp(torch.div(v_dots, self.temperature))
+            xx = torch.sum(exp_values, dim=1).squeeze(-1)
+
+        # When broadcasting not possible, manually loop over batch dimension and stack results
+        else:
+            xx_container = []
+            for k_item in range(codes.size(0)):
+                vals = self.memory_bank[indices[k_item]]
+                v_dots_prime = torch.mv(vals, codes[k_item])
+                exp_values_prime = torch.exp(torch.div(v_dots_prime, self.temperature))
+                xx_prime = torch.sum(exp_values_prime, dim=0)
+                xx_container.append(xx_prime)
+            xx = torch.stack(xx_container, dim=0)
+
+        return xx
+
+def test_la():
+    np.random.seed(42)
+    mbank = MemoryBank(4,3,1.0)
+    laloss = LocalAggregationLoss(temperature=1.0, k_nearest_neighbours=2,
+                                  memory_bank=mbank, clustering_repeats=2, number_of_centroids=2)
+    vvv = torch.tensor([[1.0, 0.0, -0.2],
+                        [0.0, -1.0, 4.0]], requires_grad=True, dtype=torch.float64)
+    laloss.forward(vvv, np.array([0,2]))
+    raise RuntimeError
+
+test_la()
 
 class ClusterHardnessLoss(nn.Module):
     '''Cluster Hardness Loss function as described in equations 4-6 in 'Clustering with Deep Learning: Taxonomy
