@@ -30,7 +30,14 @@ def marsaglia(sphere_dim):
     return norm_vals / np.linalg.norm(norm_vals)
 
 class MemoryBank(object):
-    '''Bla bla
+    '''Memory bank
+
+    Args:
+        n_vectors (int): Number of vectors the memory bank should hold
+        dim_vector (int): Dimension of the vectors the memory bank should hold
+        memory_mixing_rate (float, optional): Fraction of new vector to add to currently stored vector. The value
+            should be between 0.0 and 1.0, the greater the value the more rapid the update. The mixing rate can be
+            set during calling `update_memory`.
 
     '''
     def __init__(self, n_vectors, dim_vector, memory_mixing_rate=None):
@@ -40,7 +47,11 @@ class MemoryBank(object):
         self.memory_mixing_rate = memory_mixing_rate
 
     def update_memory(self, vectors, index, memory_mixing_rate=None):
+        '''Update the memory with new vectors
 
+        Args:
+            vectors (np.ndarray)
+        '''
         if not memory_mixing_rate is None:
             self.memory_mixing_rate = memory_mixing_rate
 
@@ -65,44 +76,67 @@ class MemoryBank(object):
             raise VectorUpdateError('Update vector of dimension size {}, '.format(len(vector_new)) + \
                                     'but memory of dimension size {}'.format(self.dim_vector))
 
+
 class LocalAggregationLoss(nn.Module):
-    '''Bla bla
+    '''Local Aggregation Loss module from "Local Aggregation for Unsupervised Learning of Visual Embeddings" by
+    Zhuang, Zhai and Yamins (2019), arXiv:1903.12355v2
+
+    Args:
+        temperature (float):
 
     '''
     def __init__(self, temperature,
                  k_nearest_neighbours, clustering_repeats, number_of_centroids,
-                 memory_bank):
+                 memory_bank,
+                 kmeans_n_init=1, nn_metric=cosine_distance, nn_metric_params={},
+                 include_self_index=True):
         super(LocalAggregationLoss, self).__init__()
 
         self.temperature = temperature
         self.memory_bank = memory_bank
+        self.include_self_index = include_self_index
 
         self.background_neighbours = None
         self.close_neighbours = None
 
         self.neighbour_finder = NearestNeighbors(n_neighbors=k_nearest_neighbours + 1,
-                                                 algorithm='ball_tree', metric=cosine_distance)
+                                                 algorithm='ball_tree',
+                                                 metric=nn_metric, metric_params=nn_metric_params)
         self.clusterer = []
         for k_clusterer in range(clustering_repeats):
             self.clusterer.append(KMeans(n_clusters=number_of_centroids,
-                                         init='random', n_init=1))
+                                         init='random', n_init=kmeans_n_init))
 
-    def nearest_neighbours(self, codes, indices):
-        '''Bla bla
+    def _nearest_neighbours(self, codes, indices):
+        '''Ascertain indices in memory bank of the k-nearest neighbours to given codes
+
+        Args:
+            codes:
+            indices:
+
+        Returns:
+            indices_nearest (numpy.ndarray): Indices of k-nearest neighbours for the batch of codes
 
         '''
         self.neighbour_finder.fit(self.memory_bank.memory_vectors)
-
         indices_nearest = self.neighbour_finder.kneighbors(codes, return_distance=False)
-        self_neighbour_masks = [np.where(indices_nearest[k] == indices[k]) for k in range(indices_nearest.shape[0])]
 
-        if any([len(x) != 1 for x in self_neighbour_masks]):
-            raise RuntimeError('Self neighbours not correctly shaped')
+        if self.include_self_index:
+            self_neighbour_masks = [np.where(indices_nearest[k] == indices[k]) for k in range(indices_nearest.shape[0])]
+            if any([len(x) != 1 for x in self_neighbour_masks]):
+                raise RuntimeError('Self neighbours not correctly shaped')
+            indices_nearest = np.delete(indices_nearest, self_neighbour_masks, axis=1)
 
-        return np.delete(indices_nearest, self_neighbour_masks, axis=1)
+        return indices_nearest
 
-    def close_grouper(self, indices):
-        '''Bla bla
+    def _close_grouper(self, indices):
+        '''Ascertain indices in memory bank of vectors that are in the same cluster as vectors of given indices
+
+        Args:
+            indices (numpy.ndarray):
+
+        Returns:
+            indices_close (numpy.ndarray):
 
         '''
         memberships = [[]] * len(indices)
@@ -115,36 +149,12 @@ class LocalAggregationLoss(nn.Module):
 
         return np.array(memberships)
 
-    def intersecter(self, n1, n2):
-        ret = []
-        for n1_x, n2_x in zip(n1, n2):
-            x = list(set(n1_x).intersection(n2_x))
-            ret.append(x)
-        return ret
-
-    def forward(self, codes, indices):
-        '''Bla bla
+    def _intersecter(self, n1, n2):
+        '''Compute set intersection of two arrays of indices
 
         '''
-        assert codes.shape[0] == len(indices)
-
-        code_data = normalize(codes.detach().numpy(), axis=1)
-        self.memory_bank.update_memory(code_data, indices)
-        self.background_neighbours = self.nearest_neighbours(code_data, indices)
-        self.close_neighbours = self.close_grouper(indices)
-        self.neighbour_intersect = self.intersecter(self.background_neighbours, self.close_neighbours)
-        print (self.background_neighbours)
-        print (self.close_neighbours)
-        print (self.neighbour_intersect)
-
-        v = F.normalize(codes, p=2, dim=1)
-        print (v)
-        d1 = self._prob_density(v, self.background_neighbours)
-        d2 = self._prob_density(v, self.neighbour_intersect)
-
-        loss_cluster = torch.log(d1) - torch.log(d2)
-        print (loss_cluster)
-        raise RuntimeError
+        ret = [np.intersect1d(n1_x, n2_x) for n1_x, n2_x in zip(n1, n2)]
+        return np.array(ret)
 
     def _prob_density(self, codes, indices):
         '''Bla bla
@@ -152,6 +162,8 @@ class LocalAggregationLoss(nn.Module):
         '''
         # In case the indices are all of the same dimension, broadcasting can be used and the
         # batch dimension is handled concisely.
+        print (codes)
+        print (indices)
         if len(set([len(x) for x in indices])) == 1:
             vals = self.memory_bank[indices]
             v_dots = torch.bmm(vals, codes.unsqueeze(-1))
@@ -171,10 +183,37 @@ class LocalAggregationLoss(nn.Module):
 
         return xx
 
+    def forward(self, codes, indices):
+        '''Bla bla
+
+        '''
+        assert codes.shape[0] == len(indices)
+
+        # Compute and collect arrays of indices that define the constants in the loss function. Note that
+        # no gradients are computed for these data values in backward pass
+        code_data = normalize(codes.detach().numpy(), axis=1)
+        self.memory_bank.update_memory(code_data, indices)
+        self.background_neighbours = self._nearest_neighbours(code_data, indices)
+        self.close_neighbours = self._close_grouper(indices)
+        self.neighbour_intersect = self._intersecter(self.background_neighbours, self.close_neighbours)
+
+        print ('Q1',self.background_neighbours)
+        print ('Q2',self.close_neighbours)
+        print ('Q3',self.neighbour_intersect)
+
+        # Compute the probability density for the codes given the constants of the memory bank
+        v = F.normalize(codes, p=2, dim=1)
+        d1 = self._prob_density(v, self.background_neighbours)
+        d2 = self._prob_density(v, self.neighbour_intersect)
+        loss_cluster = torch.log(d1) - torch.log(d2)
+
+        return loss_cluster
+
+
 def test_la():
     np.random.seed(42)
-    mbank = MemoryBank(4,3,1.0)
-    laloss = LocalAggregationLoss(temperature=1.0, k_nearest_neighbours=2,
+    mbank = MemoryBank(7,3,1.0)
+    laloss = LocalAggregationLoss(temperature=1.0, k_nearest_neighbours=5,
                                   memory_bank=mbank, clustering_repeats=2, number_of_centroids=2)
     vvv = torch.tensor([[1.0, 0.0, -0.2],
                         [0.0, -1.0, 4.0]], requires_grad=True, dtype=torch.float64)
