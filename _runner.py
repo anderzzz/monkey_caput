@@ -95,13 +95,16 @@ class _Runner(object):
         torch.save({'model_state_dict': self.model.state_dict()},
                    save_file_name + '.tar')
 
-    def _train(self, model, n_epochs, cmp_loss):
+    def _train(self, model, n_epochs, cmp_loss, saver_func):
         '''Train the model a set number of epochs
 
         Args:
-            n_epochs (int): Number of epochs to train for
+            model (nn.Module): The PyTorch module that implements the model to be trained.
+            n_epochs (int): Number of epochs to train the model for.
             cmp_loss (executable): Function that receives a mini-batch of data from the dataloader and
                 returns a loss with back-propagation method
+            saver_func (executable): Function that receives a path to a file and saves the model state dictionary
+                to said file location.
 
         '''
         best_model_wts = copy.deepcopy(model.state_dict())
@@ -138,7 +141,7 @@ class _Runner(object):
 
             if running_err < best_err:
                 best_model_wts = copy.deepcopy(model.state_dict())
-                self.save_model_state(self.inp_save_tmp_name)
+                saver_func(self.inp_save_tmp_name)
 
         # load best model weights
         model.load_state_dict(best_model_wts)
