@@ -198,6 +198,48 @@ class AutoEncoderVGG(nn.Module):
         '''
         return EncoderVGG.dim_code(img_dim)
 
+    @staticmethod
+    def state_dict_mutate(encoder_or_decoder, ae_state_dict):
+        '''Mutate an auto-encoder state dictionary into a pure encoder or decoder state dictionary
+
+        The method depends on the naming of the encoder and decoder attribute names as defined in the auto-encoder
+        initialization. Currently these names are "encoder" and "decoder".
+
+        The state dictionary that is returned can be loaded into a pure EncoderVGG or DecoderVGG instance.
+
+        Args:
+            encoder_or_decoder (str): Specification if mutation should be to an encoder state dictionary or decoder
+                state dictionary, where the former is denoted with "encoder" and the latter "decoder"
+            ae_state_dict (OrderedDict): The auto-encoder state dictionary to mutate
+
+        Returns:
+            state_dict (OrderedDict): The mutated state dictionary that can be loaded into either an EncoderVGG
+                or DecoderVGG instance
+
+        Raises:
+            RuntimeError : if state dictionary contains keys that cannot be attributed to either encoder or decoder
+            ValueError : if specified mutation is neither "encoder" or "decoder"
+
+        '''
+        if not (encoder_or_decoder == 'encoder' or encoder_or_decoder == 'decoder'):
+            raise ValueError('State dictionary mutation only for "encoder" or "decoder", not {}'.format(encoder_or_decoder))
+
+        keys = list(ae_state_dict)
+        for key in keys:
+            if 'encoder' in key or 'decoder' in key:
+                if encoder_or_decoder in key:
+                    key_new = key[len(encoder_or_decoder) + 1:]
+                    ae_state_dict[key_new] = ae_state_dict[key]
+                    del ae_state_dict[key]
+
+                else:
+                    del ae_state_dict[key]
+
+            else:
+                raise RuntimeError('State dictionary key {} is neither part of encoder or decoder'.format(key))
+
+        return ae_state_dict
+
     def forward(self, x):
         '''Forward the autoencoder for image input
 

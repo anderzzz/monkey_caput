@@ -51,7 +51,6 @@ class AELearner(_Runner):
     def load_ae(self, model_path):
         '''Populate model with a pre-trained Auto-encoder'''
         saved_dict = torch.load('{}.tar'.format(model_path))
-        print (saved_dict)
         self.model.load_state_dict(saved_dict[self.STATE_KEY_SAVE])
 
     def save_ae(self, model_path):

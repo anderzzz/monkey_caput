@@ -3,12 +3,13 @@
 '''
 import sys
 import pandas as pd
+from copy import deepcopy
 
 import torch
 
 from _runner import _Runner
 from cluster_utils import MemoryBank, LocalAggregationLoss
-from ae_deep import EncoderVGG
+from ae_deep import EncoderVGG, AutoEncoderVGG
 
 class LALearner(_Runner):
 
@@ -19,7 +20,6 @@ class LALearner(_Runner):
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
-                       encoder_init=None,
                        k_nearest_neighbours=None, clustering_repeats=None, number_of_centroids=None,
                        temperature=None, memory_mixing=None,
                        n_samples=None):
@@ -32,7 +32,6 @@ class LALearner(_Runner):
                                         lr_init, momentum,
                                         scheduler_step_size, scheduler_gamma)
 
-        self.inp_encoder_init = encoder_init
         self.inp_k_nearest_neighbours = k_nearest_neighbours
         self.inp_clustering_repeats = clustering_repeats
         self.inp_number_of_centroids = number_of_centroids
@@ -40,26 +39,30 @@ class LALearner(_Runner):
         self.inp_memory_mixing = memory_mixing
 
         self.model = EncoderVGG()
-        self.memory_bank = MemoryBank(n_vectors=n_samples, dim_vector=self.model.channels_out,
+        self.memory_bank = MemoryBank(n_vectors=n_samples, dim_vector=self.model.channels_code,
                                       memory_mixing_rate=memory_mixing)
         self.criterion = LocalAggregationLoss(memory_bank=self.memory_bank,
-                                              temperature=self.temperature,
-                                              k_nearest_neighbours=self.k_nearest_neighbours,
-                                              clustering_repeats=self.clustering_repeats,
-                                              number_of_centroids=self.number_of_centroids)
-
-    def _load_encoder_state(self, ae_file_name, key='model_state_dict'):
-        '''Bla bla
-
-        '''
-        ae_saved_state = torch.load('{}.tar'.format(ae_file_name))
-        print (ae_saved_state)
-        raise RuntimeError
+                                              temperature=self.inp_temperature,
+                                              k_nearest_neighbours=self.inp_k_nearest_neighbours,
+                                              clustering_repeats=self.inp_clustering_repeats,
+                                              number_of_centroids=self.inp_number_of_centroids)
 
     def load_encoder(self, model_path):
-        saved_dict = torch.load('{}.tar'.format(model_path))
-        print (saved_dict.keys())
-        raise RuntimeError
+        '''Load encoder from saved state dictionary
+
+        The method dynamically determines if the state dictionary is from an encoder or an auto-encoder. In the latter
+        case the decoder part of the state dictionary is removed.
+
+        Args:
+            model_path (str): Path to the saved model to load
+
+        '''
+        saved_dict = torch.load('{}.tar'.format(model_path))[self.STATE_KEY_SAVE]
+        if any(['decoder' in key for key in saved_dict.keys()]):
+            encoder_state_dict = AutoEncoderVGG.state_dict_mutate('encoder', saved_dict)
+        else:
+            encoder_state_dict = saved_dict
+        self.model.load_state_dict(encoder_state_dict)
 
 
 chantarelle_flue = pd.IndexSlice[:,:,:,:,:,['Cantharellaceae','Amanitaceae'],:,:,:]
@@ -73,4 +76,4 @@ def test1():
                     lr_init=0.03, scheduler_step_size=10,
                     encoder_init='kantflue_grid_ae')
 
-test1()
+#test1()

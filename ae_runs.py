@@ -18,7 +18,12 @@ def train_from_existing():
     learner_1.train(3)
     learner_1.save_ae('ae_learner_run_2')
 
+def eval_from_existing():
+    learner_1.load_ae('ae_learner_run_2')
+    learner_1.eval_model(eval_img_prefix='./save_dummy/eval_img')
+
 
 if __name__ == '__main__':
-    train_from_scratch()
-    train_from_existing()
+    #train_from_scratch()
+    #train_from_existing()
+    eval_from_existing()
