@@ -6,11 +6,11 @@ import pandas as pd
 
 import torch
 
-from _runner import _Runner
+from _learner import _Learner
 from cluster_utils import MemoryBank, LocalAggregationLoss
 from ae_deep import EncoderVGG, AutoEncoderVGG
 
-class LALearner(_Runner):
+class LALearner(_Learner):
 
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
                        raw_csv_toc='toc_full.csv', raw_csv_root='.', grid_crop=True,
@@ -52,7 +52,7 @@ class LALearner(_Runner):
 
         self.print_inp()
 
-    def load_encoder(self, model_path):
+    def load_model(self, model_path):
         '''Load encoder from saved state dictionary
 
         The method dynamically determines if the state dictionary is from an encoder or an auto-encoder. In the latter
@@ -69,7 +69,7 @@ class LALearner(_Runner):
             encoder_state_dict = saved_dict
         self.model.load_state_dict(encoder_state_dict)
 
-    def save_encoder(self, model_path):
+    def save_model(self, model_path):
         '''Save encoder
 
         '''
@@ -78,9 +78,9 @@ class LALearner(_Runner):
 
     def train(self, n_epochs):
         '''Train model for set number of epochs'''
-        self._train(model=self.model, n_epochs=n_epochs, cmp_loss=self._exec_loss, saver_func=self.save_encoder)
+        self._train(n_epochs=n_epochs)
 
-    def _exec_loss(self, image, idx):
+    def compute_loss(self, image, idx):
         '''Method to compute the loss of a model given an input.'''
         outputs, _ = self.model(image)
         loss = self.criterion(outputs, idx)

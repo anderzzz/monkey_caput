@@ -5,6 +5,7 @@ import sys
 import time
 import copy
 from numpy.random import seed
+import abc
 
 import torch
 from torch.utils.data import DataLoader
@@ -12,7 +13,38 @@ from torch import optim
 
 from fungiimg import FungiImgGridCrop, FungiImg
 
-class _Runner(object):
+class LearnerInterface(metaclass=abc.ABCMeta):
+    @classmethod
+    def __subclasshook__(cls, subclass):
+        return (hasattr(subclass, 'train') and
+                callable(subclass.train) and
+                hasattr(subclass, 'save_model') and
+                callable(subclass.save_model) and
+                hasattr(subclass, 'compute_loss') and
+                callable(subclass.compute_loss))
+
+    @abc.abstractmethod
+    def train(self, n_epochs: int):
+        '''Train model'''
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def compute_loss(self, **kwargs):
+        '''Compute loss of model for image input'''
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def save_model(self, path: str):
+        '''Save model state to file'''
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def load_model(self, path: str):
+        '''Save model state to file'''
+        raise NotImplementedError
+
+
+class _Learner(LearnerInterface):
     '''Parent class for the auto-encoder and clustering runners based on the VGG template model
 
     '''
@@ -64,6 +96,7 @@ class _Runner(object):
         self.dataloader = DataLoader(self.dataset, batch_size=loader_batch_size,
                                      shuffle=False, num_workers=num_workers)
         self.dataset_size = len(self.dataset)
+        self.model = None
 
     def set_optim(self, parameters, lr=0.01, momentum=0.9, scheduler_step_size=15, scheduler_gamma=0.1):
         '''Set what parameters to optimize and the meta-parameters of the SGD optimizer
@@ -87,17 +120,7 @@ class _Runner(object):
                 key = attr_name[4:]
                 print('{} : {}'.format(key, attr_value), file=self.inp_f_out)
 
-    def _load_model_state(self, load_file_name):
-        '''Populate the Auto-Encoder model with state on file'''
-        dd = torch.load(load_file_name + '.tar')
-        self.model.load_state_dict(dd['model_state_dict'])
-
-    def save_model_state(self, save_file_name):
-        '''Save Auto-Encoder model state on file'''
-        torch.save({'model_state_dict': self.model.state_dict()},
-                   save_file_name + '.tar')
-
-    def _train(self, model, n_epochs, cmp_loss, saver_func):
+    def _train(self, n_epochs):
         '''Train the model a set number of epochs
 
         Args:
@@ -109,9 +132,12 @@ class _Runner(object):
                 to said file location.
 
         '''
-        best_model_wts = copy.deepcopy(model.state_dict())
+        if not isinstance(self.model, torch.nn.Module):
+            raise TypeError('Attribute "model" of {} must be a subclass of the PyTorch Module (torch.nn.Module)'.format(self))
+
+        best_model_wts = copy.deepcopy(self.model.state_dict())
         best_err = 1e20
-        model.train()
+        self.model.train()
 
         for epoch in range(n_epochs):
             print('Epoch {}/{}...'.format(epoch, n_epochs - 1), file=self.inp_f_out)
@@ -127,7 +153,7 @@ class _Runner(object):
                 self.optimizer.zero_grad()
 
                 # Compute loss
-                loss = cmp_loss(**inputs)
+                loss = self.compute_loss(**inputs)
 
                 # Back-propagate and optimize
                 loss.backward()
@@ -144,11 +170,11 @@ class _Runner(object):
             print('', file=self.inp_f_out)
 
             if running_err < best_err:
-                best_model_wts = copy.deepcopy(model.state_dict())
-                saver_func(self.inp_save_tmp_name)
+                best_model_wts = copy.deepcopy(self.model.state_dict())
+                self.save_model(self.inp_save_tmp_name)
 
         # load best model weights
-        model.load_state_dict(best_model_wts)
+        self.model.load_state_dict(best_model_wts)
 
 
 def progress_bar(current, total, barlength=20):

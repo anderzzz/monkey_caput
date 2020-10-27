@@ -7,11 +7,11 @@ import torch
 from torch import nn
 from torchvision.utils import save_image
 
-from _runner import _Runner
+from _learner import _Learner
 from fungiimg import UnNormalizeTransform
 from ae_deep import AutoEncoderVGG
 
-class AELearner(_Runner):
+class AELearner(_Learner):
     '''Runner class for the training and evaluation of the Auto-Encoder
 
     '''
@@ -49,20 +49,20 @@ class AELearner(_Runner):
 
         self.print_inp()
 
-    def load_ae(self, model_path):
+    def load_model(self, model_path):
         '''Populate model with a pre-trained Auto-encoder'''
         saved_dict = torch.load('{}.tar'.format(model_path))
         self.model.load_state_dict(saved_dict[self.STATE_KEY_SAVE])
 
-    def save_ae(self, model_path):
+    def save_model(self, model_path):
         torch.save({self.STATE_KEY_SAVE: self.model.state_dict()},
                    '{}.tar'.format(model_path))
 
     def train(self, n_epochs):
         '''Train model for set number of epochs'''
-        self._train(model=self.model, n_epochs=n_epochs, cmp_loss=self._exec_loss, saver_func=self.save_ae)
+        self._train(n_epochs=n_epochs)
 
-    def _exec_loss(self, image):
+    def compute_loss(self, image):
         '''Method to compute the loss of a model given an input. Should be called as part of the training'''
         outputs = self.model(image)
         loss = self.criterion(outputs, image)

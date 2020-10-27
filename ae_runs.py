@@ -21,21 +21,21 @@ learner_2 = AELearner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_ro
 
 def train_from_scratch():
     learner_1.train(3)
-    learner_1.save_ae('ae_learner_run_1')
+    learner_1.save_model('ae_learner_run_1')
 
 def train_from_existing():
-    learner_1.load_ae('ae_learner_run_1')
+    learner_1.load_model('ae_learner_run_1')
     learner_1.train(3)
-    learner_1.save_ae('ae_learner_run_2')
+    learner_1.save_model('ae_learner_run_2')
 
 def eval_from_existing():
-    learner_1.load_ae('ae_learner_run_2')
+    learner_1.load_model('ae_learner_run_2')
     learner_1.eval_model(eval_img_prefix='./save_dummy/eval_img')
 
 def train_bigger():
-    learner_2.load_ae('model_in_progress')
+    learner_2.load_model('model_in_progress')
     learner_2.train(30)
-    learner_2.save_ae('ae_learner_2_bigger')
+    learner_2.save_model('ae_learner_2_bigger')
 
 
 if __name__ == '__main__':

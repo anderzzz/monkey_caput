@@ -11,7 +11,7 @@ learner_1 = LALearner(run_label='simple test run',
                       memory_mixing=0.5, n_samples=216)
 
 def train_simple():
-    learner_1.load_encoder('ae_learner_run_2')
+    learner_1.load_model('ae_learner_run_2')
     learner_1.train(3)
 
 
