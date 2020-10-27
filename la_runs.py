@@ -12,6 +12,7 @@ learner_1 = LALearner(run_label='simple test run',
 
 def train_simple():
     learner_1.load_encoder('ae_learner_run_2')
+    learner_1.train(3)
 
 
 if __name__ == '__main__':

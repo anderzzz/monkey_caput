@@ -242,6 +242,9 @@ class LocalAggregationLoss(nn.Module):
         '''
         assert codes.shape[0] == len(indices)
 
+        print (codes.shape)
+        print (indices.shape)
+        raise RuntimeError
         code_data = normalize(codes.detach().numpy(), axis=1)
 
         # Compute and collect arrays of indices that define the constants in the loss function. Note that
@@ -257,6 +260,8 @@ class LocalAggregationLoss(nn.Module):
         d2 = self._prob_density(v, self.neighbour_intersect, self.force_stacking)
         loss_cluster = torch.sum(torch.log(d1) - torch.log(d2)) / codes.shape[0]
 
+        raise RuntimeError
+
         return loss_cluster
 
 
@@ -270,8 +275,6 @@ def test_la():
                         [0.5,2.0,0.0]], requires_grad=True, dtype=torch.float64)
     loss = laloss(vvv, np.array([0,2,3]))
     print (loss)
-
-test_la()
 
 
 class ClusterHardnessLoss(nn.Module):

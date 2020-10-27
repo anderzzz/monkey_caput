@@ -3,7 +3,6 @@
 '''
 import sys
 import pandas as pd
-from copy import deepcopy
 
 import torch
 
@@ -27,7 +26,7 @@ class LALearner(_Runner):
         super(LALearner, self).__init__(run_label, random_seed, f_out,
                                         raw_csv_toc, raw_csv_root, grid_crop,
                                         save_tmp_name,
-                                        selector, iselector,
+                                        selector, iselector, True,
                                         loader_batch_size, num_workers,
                                         lr_init, momentum,
                                         scheduler_step_size, scheduler_gamma)
@@ -46,6 +45,12 @@ class LALearner(_Runner):
                                               k_nearest_neighbours=self.inp_k_nearest_neighbours,
                                               clustering_repeats=self.inp_clustering_repeats,
                                               number_of_centroids=self.inp_number_of_centroids)
+        self.set_optim(lr=self.inp_lr_init,
+                       scheduler_step_size=self.inp_scheduler_step_size,
+                       scheduler_gamma=self.inp_scheduler_gamma,
+                       parameters=self.model.parameters())
+
+        self.print_inp()
 
     def load_encoder(self, model_path):
         '''Load encoder from saved state dictionary
@@ -63,6 +68,23 @@ class LALearner(_Runner):
         else:
             encoder_state_dict = saved_dict
         self.model.load_state_dict(encoder_state_dict)
+
+    def save_encoder(self, model_path):
+        '''Save encoder
+
+        '''
+        torch.save({self.STATE_KEY_SAVE: self.model.state_dict()},
+                   '{}.tar'.format(model_path))
+
+    def train(self, n_epochs):
+        '''Train model for set number of epochs'''
+        self._train(model=self.model, n_epochs=n_epochs, cmp_loss=self._exec_loss, saver_func=self.save_encoder)
+
+    def _exec_loss(self, image, idx):
+        '''Method to compute the loss of a model given an input.'''
+        outputs, _ = self.model(image)
+        loss = self.criterion(outputs, idx)
+        return loss
 
 
 chantarelle_flue = pd.IndexSlice[:,:,:,:,:,['Cantharellaceae','Amanitaceae'],:,:,:]

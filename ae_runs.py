@@ -39,7 +39,7 @@ def train_bigger():
 
 
 if __name__ == '__main__':
-    #train_from_scratch()
+    train_from_scratch()
     #train_from_existing()
     #eval_from_existing()
-    train_bigger()
+    #train_bigger()

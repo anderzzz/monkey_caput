@@ -21,7 +21,7 @@ class _Runner(object):
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
                        raw_csv_toc='toc_full.csv', raw_csv_root='.', grid_crop=True,
                        save_tmp_name='model_in_progress',
-                       selector=None, iselector=None,
+                       selector=None, iselector=None, index_return=False,
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1):
@@ -54,11 +54,13 @@ class _Runner(object):
         if self.inp_grid_crop:
             self.dataset = FungiImgGridCrop(csv_file=raw_csv_toc, root_dir=raw_csv_root,
                                             iselector=self.inp_iselector,
-                                            selector=self.inp_selector)
+                                            selector=self.inp_selector,
+                                            index_return=index_return)
         else:
             self.dataset = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
                                     iselector=self.inp_iselector,
-                                    selector=self.inp_selector)
+                                    selector=self.inp_selector,
+                                    index_return=index_return)
         self.dataloader = DataLoader(self.dataset, batch_size=loader_batch_size,
                                      shuffle=False, num_workers=num_workers)
         self.dataset_size = len(self.dataset)
@@ -117,13 +119,15 @@ class _Runner(object):
             running_err = 0.0
             n_instances = 0
             for inputs in self.dataloader:
-                inputs = inputs.to(self.device)
+
+                img_inputs = inputs[self.dataset.getkeys.image]
+                img_inputs = img_inputs.to(self.device)
 
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
 
                 # Compute loss
-                loss = cmp_loss(inputs)
+                loss = cmp_loss(**inputs)
 
                 # Back-propagate and optimize
                 loss.backward()
@@ -131,8 +135,8 @@ class _Runner(object):
                 self.exp_lr_scheduler.step()
 
                 # Update aggregates and reporting
-                running_err += loss.item() * inputs.size(0)
-                n_instances += inputs.size(0)
+                running_err += loss.item() * img_inputs.size(0)
+                n_instances += img_inputs.size(0)
                 progress_bar(n_instances, self.dataset_size)
 
             running_err = running_err / self.dataset_size

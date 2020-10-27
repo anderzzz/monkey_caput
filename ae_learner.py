@@ -27,14 +27,15 @@ class AELearner(_Runner):
         super(AELearner, self).__init__(run_label, random_seed, f_out,
                                        raw_csv_toc, raw_csv_root, grid_crop,
                                        save_tmp_name,
-                                       selector, iselector,
+                                       selector, iselector, False,
                                        loader_batch_size, num_workers,
                                        lr_init, momentum,
                                        scheduler_step_size, scheduler_gamma)
 
+        self.inp_freeze_encoder = freeze_encoder
+
         self.model = AutoEncoderVGG()
         self.criterion = nn.MSELoss()
-        self.inp_freeze_encoder = freeze_encoder
         if self.inp_freeze_encoder:
             self.set_optim(lr=self.inp_lr_init,
                            scheduler_step_size=self.inp_scheduler_step_size,
@@ -59,12 +60,12 @@ class AELearner(_Runner):
 
     def train(self, n_epochs):
         '''Train model for set number of epochs'''
-        self._train(model=self.model, n_epochs=n_epochs, cmp_loss=self._exec_loss)
+        self._train(model=self.model, n_epochs=n_epochs, cmp_loss=self._exec_loss, saver_func=self.save_ae)
 
-    def _exec_loss(self, inputs):
+    def _exec_loss(self, image):
         '''Method to compute the loss of a model given an input. Should be called as part of the training'''
-        outputs = self.model(inputs)
-        loss = self.criterion(outputs, inputs)
+        outputs = self.model(image)
+        loss = self.criterion(outputs, image)
         return loss
 
     def eval_model(self, custom_dataloader=None, eval_img_prefix='eval_img'):

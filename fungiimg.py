@@ -7,9 +7,9 @@ import pandas as pd
 import numpy as np
 import os
 from skimage import io
-from dataclasses import dataclass
 
 from enum import Enum
+from dataclasses import dataclass
 
 import torch
 from torch.utils.data import Dataset
@@ -23,6 +23,13 @@ class RawData(Enum):
     N_ROWS = 15695
     '''Number of rows in the image raw data'''
     HEADERS = ['Kingdom', 'Division', 'Subdivision', 'Class', 'Order', 'Family', 'Genus', 'Species', 'InstanceIndex', 'ImageName']
+
+@dataclass
+class DataGetKeys:
+    '''Shared keys for the return of the datasets __getitem__ dictionary'''
+    image: str = 'image'
+    label: str = 'label'
+    idx: str = 'idx'
 
 class FungiImg(Dataset):
     '''The Fungi Image Dataset Class
@@ -54,6 +61,8 @@ class FungiImg(Dataset):
             to define subsets of the data that should be assigned integer class labels. If None, the
             indexing of the class returns the image tensor object, if not None, the indexing of the class
             returns the image tensor object and the integer class label.
+        index_return (bool, optional): If True, the `__getitem__` method returns in addition to other things,
+            the index associated with its other returned objects. Defaults to False.
 
     Attributes:
         n_species (int): Number of fungi species in DataSet
@@ -66,12 +75,16 @@ class FungiImg(Dataset):
         n_instance_order (dict) : Number of instances of each fungi orders in DataSet
 
     '''
-    def __init__(self, csv_file, root_dir, selector=None, iselector=None, transform=None, label_keys=None):
+    def __init__(self, csv_file, root_dir, selector=None, iselector=None, transform=None,
+                 label_keys=None, index_return=False):
 
         self.img_toc = pd.read_csv(csv_file, index_col=(0,1,2,3,4,5,6,7,8))
         self.root_dir = root_dir
         self.transform = transform
         self.label_keys = label_keys
+        self.index_return = index_return
+
+        self.getkeys = DataGetKeys()
 
         if not selector is None:
             self.img_toc = self.img_toc.loc[selector]
@@ -99,12 +112,17 @@ class FungiImg(Dataset):
         '''Get data of given index.
 
         Note that the method returns the image and/or the associated ground truth label depending on the `label_keys`
-        argument during initialization.
+        argument during initialization. Optionally the indeces are returned as well, which means a DataLoader will
+        return these as well.
 
         Returns:
+            return_data (dict): Dictionary with return data. The content of the dictionary depends on the
+                initialization. At least it contains the image tensor. Optionally image label and
             image (Tensor): an image or images in the dataset
             label: ground truth label or labels that specifies ground truth class of the image or images. This is
                 only returned if `label_keys` is not `None` in initialization.
+            idx (Tensor): one index or several indices of the images retrieved. This is only returned if `index_return`
+                is `True` in initialization.
 
         '''
         if torch.is_tensor(idx):
@@ -121,11 +139,13 @@ class FungiImg(Dataset):
         if not self.transform is None:
             image = self.transform(image)
 
+        return_ = {self.getkeys.image : image}
         if not self.label_keys is None:
-            label = row[1]
-            return image, label
-        else:
-            return image
+            return_[self.getkeys.image] = row[1]
+        if self.index_return:
+            return_[self.getkeys.idx] = idx
+
+        return return_
 
     def info_on_(self, idx):
         return self.img_toc.iloc[idx].name, self.img_toc.iloc[idx][0]
@@ -189,6 +209,8 @@ class FungiImgGridCrop(Dataset):
             order to select a subset of images on basis of MultiIndex values. Defaults to None.
         iselector (optional): Colletion of integer indices or callable that is passed to the Pandas `.iloc`
             method in order to select a subset of images. This is applied after any `selector` filtering.
+        index_return (bool, optional): If True, the `__getitem__` method returns in addition to other things,
+            the index associated with its other returned objects. Defaults to False.
         img_input_dim (int): Length and height of square of source image to be sliced by grid.
         img_n_splits (int): Number of slices per side, thus total number of slices for one source image
             will be `img_n_splits * img_n_splits`.
@@ -199,13 +221,16 @@ class FungiImgGridCrop(Dataset):
         GridMakerError: In case the grid cropping specifications are not adding up
 
     '''
-    def __init__(self, csv_file, root_dir, selector=None, iselector=None,
+    def __init__(self, csv_file, root_dir, selector=None, iselector=None, index_return=False,
                  img_input_dim=224, img_n_splits=6, crop_step_size=32, crop_dim=64):
 
         self.fungiimg = FungiImg(csv_file=csv_file, root_dir=root_dir,
-                                 selector=selector, iselector=iselector,
+                                 selector=selector, iselector=iselector, index_return=index_return,
                                  transform=None,
                                  label_keys=None)
+        self.index_return = self.fungiimg.index_return
+        self.getkeys = self.fungiimg.getkeys
+
         self.cropper = OverlapGridTransform(img_input_dim, img_n_splits, crop_step_size, crop_dim)
 
     def __len__(self):
@@ -220,10 +245,15 @@ class FungiImgGridCrop(Dataset):
         '''
         idx_fungi = int(np.floor(idx / self.cropper.n_blocks))
         idx_sub = idx % self.cropper.n_blocks
-        img = self.fungiimg.__getitem__(idx_fungi)
-        img_crops = self.cropper(img)
+        out_full_img = self.fungiimg.__getitem__(idx_fungi)
 
-        return img_crops[idx_sub]
+        return_ = {}
+        if self.index_return:
+            return_[self.getkeys.idx] = idx
+        img_crops = self.cropper(out_full_img[self.getkeys.image])
+        return_[self.getkeys.image] = img_crops[idx_sub]
+
+        return return_
 
 
 class ZScoreConsts(Enum):
