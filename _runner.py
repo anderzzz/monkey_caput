@@ -16,8 +16,10 @@ class _Runner(object):
     '''Parent class for the auto-encoder and clustering runners based on the VGG template model
 
     '''
+    STATE_KEY_SAVE = 'ae_model_state'
+
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
-                       raw_csv_toc='toc_full.csv', raw_csv_root='.',
+                       raw_csv_toc='toc_full.csv', raw_csv_root='.', grid_crop=True,
                        save_tmp_name='model_in_progress',
                        selector=None, iselector=None,
                        loader_batch_size=16, num_workers=0,
@@ -29,6 +31,7 @@ class _Runner(object):
         self.inp_f_out = f_out
         self.inp_raw_csv_toc = raw_csv_toc
         self.inp_raw_csv_root = raw_csv_root
+        self.inp_grid_crop = grid_crop
         self.inp_save_tmp_name = save_tmp_name
         self.inp_selector = selector
         self.inp_iselector = iselector
@@ -48,9 +51,14 @@ class _Runner(object):
         torch.backends.cudnn.benchmark = False
 
         # Initialize Dataset, DataLoader, and Model
-        self.dataset = FungiImgGridCrop(csv_file=raw_csv_toc, root_dir=raw_csv_root,
-                                        iselector=self.inp_iselector,
-                                        selector=self.inp_selector)
+        if self.inp_grid_crop:
+            self.dataset = FungiImgGridCrop(csv_file=raw_csv_toc, root_dir=raw_csv_root,
+                                            iselector=self.inp_iselector,
+                                            selector=self.inp_selector)
+        else:
+            self.dataset = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
+                                    iselector=self.inp_iselector,
+                                    selector=self.inp_selector)
         self.dataloader = DataLoader(self.dataset, batch_size=loader_batch_size,
                                      shuffle=False, num_workers=num_workers)
         self.dataset_size = len(self.dataset)
@@ -87,7 +95,7 @@ class _Runner(object):
         torch.save({'model_state_dict': self.model.state_dict()},
                    save_file_name + '.tar')
 
-    def _train(self, n_epochs, cmp_loss):
+    def _train(self, model, n_epochs, cmp_loss):
         '''Train the model a set number of epochs
 
         Args:
@@ -96,9 +104,9 @@ class _Runner(object):
                 returns a loss with back-propagation method
 
         '''
-        best_model_wts = copy.deepcopy(self.model.state_dict())
+        best_model_wts = copy.deepcopy(model.state_dict())
         best_err = 1e20
-        self.model.train()
+        model.train()
 
         for epoch in range(n_epochs):
             print('Epoch {}/{}...'.format(epoch, n_epochs - 1), file=self.inp_f_out)
@@ -129,11 +137,11 @@ class _Runner(object):
             print('', file=self.inp_f_out)
 
             if running_err < best_err:
-                best_model_wts = copy.deepcopy(self.model.state_dict())
+                best_model_wts = copy.deepcopy(model.state_dict())
                 self.save_model_state(self.inp_save_tmp_name)
 
         # load best model weights
-        self.model.load_state_dict(best_model_wts)
+        model.load_state_dict(best_model_wts)
 
 
 def progress_bar(current, total, barlength=20):

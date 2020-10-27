@@ -13,7 +13,7 @@ from ae_deep import EncoderVGG
 class LALearner(_Runner):
 
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
-                       raw_csv_toc='toc_full.csv', raw_csv_root='.',
+                       raw_csv_toc='toc_full.csv', raw_csv_root='.', grid_crop=True,
                        save_tmp_name='model_in_progress',
                        selector=None, iselector=None,
                        loader_batch_size=16, num_workers=0,
@@ -25,7 +25,7 @@ class LALearner(_Runner):
                        n_samples=None):
 
         super(LALearner, self).__init__(run_label, random_seed, f_out,
-                                        raw_csv_toc, raw_csv_root,
+                                        raw_csv_toc, raw_csv_root, grid_crop,
                                         save_tmp_name,
                                         selector, iselector,
                                         loader_batch_size, num_workers,
@@ -40,9 +40,7 @@ class LALearner(_Runner):
         self.inp_memory_mixing = memory_mixing
 
         self.model = EncoderVGG()
-        self._load_encoder_state(self.inp_encoder_init
-                                 )
-        self.memory_bank = MemoryBank(n_vectors=n_samples, dim_vector=encoder.channels_out,
+        self.memory_bank = MemoryBank(n_vectors=n_samples, dim_vector=self.model.channels_out,
                                       memory_mixing_rate=memory_mixing)
         self.criterion = LocalAggregationLoss(memory_bank=self.memory_bank,
                                               temperature=self.temperature,
@@ -56,6 +54,11 @@ class LALearner(_Runner):
         '''
         ae_saved_state = torch.load('{}.tar'.format(ae_file_name))
         print (ae_saved_state)
+        raise RuntimeError
+
+    def load_encoder(self, model_path):
+        saved_dict = torch.load('{}.tar'.format(model_path))
+        print (saved_dict.keys())
         raise RuntimeError
 
 
