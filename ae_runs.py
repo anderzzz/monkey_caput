@@ -2,8 +2,10 @@
 
 '''
 from pandas import IndexSlice
+from numpy.random import shuffle
 
 from ae_learner import AELearner
+from fungiimg import UnNormalizeTransform
 
 learner_1 = AELearner(run_label='simple test run',
                       raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
@@ -19,6 +21,19 @@ learner_2 = AELearner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_ro
                       freeze_encoder=False,
                       random_seed=79)
 
+tt = IndexSlice[:, :, :, :, :, ['Cantharellaceae', 'Amanitaceae'], :, :, :]
+v1 = list(range(759))
+v2 = list(range(759, 2429))
+shuffle(v1)
+shuffle(v2)
+vv = v1[:350] + v2[:700]
+learner_3 = AELearner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                      loader_batch_size=128, selector=tt,
+                      iselector=vv,
+                      lr_init=0.01, scheduler_step_size=5,
+                      freeze_encoder=False,
+                      random_seed=79)
+
 def train_from_scratch():
     learner_1.train(3)
     learner_1.save_model('ae_learner_run_1')
@@ -30,16 +45,16 @@ def train_from_existing():
 
 def eval_from_existing():
     learner_1.load_model('ae_learner_run_2')
-    learner_1.eval_model(eval_img_prefix='./save_dummy/eval_img')
+    for out in learner_1.eval_model(untransform=UnNormalizeTransform()):
+        print (out.shape)
 
 def train_bigger():
     learner_2.load_model('model_in_progress')
-    learner_2.train(30)
+    learner_2.train(15)
     learner_2.save_model('ae_learner_2_bigger')
 
 
 if __name__ == '__main__':
-    train_from_scratch()
+    #train_from_scratch()
     #train_from_existing()
-    #eval_from_existing()
-    #train_bigger()
+    eval_from_existing()

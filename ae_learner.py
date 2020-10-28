@@ -1,4 +1,6 @@
-'''Bla bla
+'''Auto-Encoder Learner for the fungi dataset, a child of `_Learner`
+
+Written by: Anders Ohrn, October 2020
 
 '''
 import sys
@@ -8,11 +10,13 @@ from torch import nn
 from torchvision.utils import save_image
 
 from _learner import _Learner
-from fungiimg import UnNormalizeTransform
 from ae_deep import AutoEncoderVGG
 
 class AELearner(_Learner):
-    '''Runner class for the training and evaluation of the Auto-Encoder
+    '''Auto-encoder Learner class applied to the fungi image dataset for learning efficient encoding and decoding
+
+    Args:
+        To be written
 
     '''
     def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
@@ -56,38 +60,71 @@ class AELearner(_Learner):
         self.print_inp()
 
     def load_model(self, model_path):
-        '''Populate model with a pre-trained Auto-encoder'''
+        '''Load auto-encoder from saved state dictionary
+
+        Args:
+            model_path (str): Path to the saved model to load
+
+        '''
         saved_dict = torch.load('{}.tar'.format(model_path))
         self.model.load_state_dict(saved_dict[self.STATE_KEY_SAVE])
 
     def save_model(self, model_path):
+        '''Save encoder state dictionary
+
+        Args:
+            model_path (str): Path and name to file to save state dictionary to. The filename on disk is this argument
+                appended with suffix `.tar`
+
+        '''
         torch.save({self.STATE_KEY_SAVE: self.model.state_dict()},
                    '{}.tar'.format(model_path))
 
     def train(self, n_epochs):
-        '''Train model for set number of epochs'''
+        '''Train model for set number of epochs
+
+        Args:
+            n_epochs (int): Number of epochs to train the model for
+
+        '''
         self._train(n_epochs=n_epochs)
 
     def compute_loss(self, image):
-        '''Method to compute the loss of a model given an input. Should be called as part of the training'''
+        '''Method to compute the loss of a model given an input.
+
+        The argument to this method has to be named as the corresponding output from the Dataset. The data class
+        `DataGetKeys` define these string constants for the Dataset.
+
+        Args:
+            image (PyTorch Tensor): the batch of images to compute loss for
+
+        Returns:
+            loss: The auto-encoding loss, given input
+
+        '''
         outputs = self.model(image)
         loss = self.criterion(outputs, image)
         return loss
 
-    def eval_model(self, custom_dataloader=None, eval_img_prefix='eval_img'):
-        '''Evaluate the Auto-encoder for a selection of images'''
-        self.model.eval()
+    def eval_model(self, dloader=None, untransform=None):
+        '''Generator to evaluate the Auto-encoder for a selection of images
 
-        if custom_dataloader is None:
-            dloader = self.dataloader
-        else:
-            dloader = custom_dataloader
+        Args:
+            dloader (optional): Dataloader to collect data with. Defaults to `None`, in which case the Dataloader of
+                `self` is used.
+            untransform (optional): Image transform to apply to the model output. Typically a de-normalizing transform
+                to make image human readable
 
-        n = 0
-        uu = UnNormalizeTransform()
-        for inputs in dloader:
-            inputs = inputs.to(self.device)
-            outputs = self.model(inputs)
-            for out in outputs:
-                save_image(uu(out), '{}_{}.png'.format(eval_img_prefix, n))
-                n += 1
+        Yields:
+            img_batch (PyTorch Tensor): batch of images following evaluation
+
+        '''
+        for model_output in self._eval_model(dloader):
+            ret_batch = []
+            for img in model_output:
+                img = img.detach()
+                if not untransform is None:
+                    img = untransform(img)
+                ret_batch.append(img)
+
+            yield torch.stack(ret_batch)

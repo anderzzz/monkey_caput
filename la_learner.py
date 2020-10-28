@@ -4,7 +4,6 @@ Written by: Anders Ohrn, October 2020
 
 '''
 import sys
-import pandas as pd
 import numpy as np
 
 import torch
@@ -14,7 +13,7 @@ from cluster_utils import MemoryBank, LocalAggregationLoss
 from ae_deep import EncoderVGGMerged, AutoEncoderVGG
 
 class LALearner(_Learner):
-    '''Local Aggregation Learner class applied to the fungi image dataset
+    '''Local Aggregation Learner class applied to the fungi image dataset for clustering of images
 
     Args:
         To be written
@@ -86,25 +85,56 @@ class LALearner(_Learner):
         self.model.load_state_dict(encoder_state_dict)
 
     def save_model(self, model_path):
-        '''Save encoder
+        '''Save encoder state dictionary
+
+        Args:
+            model_path (str): Path and name to file to save state dictionary to. The filename on disk is this argument
+                appended with suffix `.tar`
 
         '''
         torch.save({self.STATE_KEY_SAVE: self.model.state_dict()},
                    '{}.tar'.format(model_path))
 
     def train(self, n_epochs):
-        '''Train model for set number of epochs'''
+        '''Train model for set number of epochs
+
+        Args:
+            n_epochs (int): Number of epochs to train the model for
+
+        '''
         self._train(n_epochs=n_epochs)
 
     def compute_loss(self, image, idx):
-        '''Method to compute the loss of a model given an input.'''
+        '''Method to compute the loss of a model given an input.
 
+        The arguments to this method have to be named as the corresponding output from the Dataset. The data class
+        `DataGetKeys` define these string constants for the Dataset.
+
+        Args:
+            image (PyTorch Tensor): the batch of images to compute loss for
+            idx (PyTorch Tensor): the batch of dataset indices the batch of images corresponds to
+
+        Returns:
+            loss: The local aggregation loss, given input
+
+        '''
         outputs = self.model(image)
         loss = self.criterion(outputs, idx.detach().numpy())
         return loss
 
     def eval(self, clusterer, clusterer_kwargs={}, dloader=None):
-        '''Bla bla
+        '''Evaluate cluster properties for the data provided by data loader
+
+        Args:
+            clusterer (callable): Function that given a collection of feature vectors of shape (n_samples, n_features)
+                evaluates for each sample the cluster label. A function with these features are most `fit_predict`
+                methods of the clustering classes of `sklearn.cluster`.
+            clusterer_kwargs (dict, optional): Named argument dictionary for clusterer. Defaults to empty dictionary.
+            dloader (optional): Dataloader to collect data with. Defaults to `None`, in which case the Dataloader of
+                `self` is used.
+
+        Returns:
+            cluster_labels: The output of `clusterer` applied to the codes
 
         '''
         all_output = None
@@ -116,16 +146,3 @@ class LALearner(_Learner):
 
         return clusterer(all_output, **clusterer_kwargs)
 
-
-chantarelle_flue = pd.IndexSlice[:,:,:,:,:,['Cantharellaceae','Amanitaceae'],:,:,:]
-chantarelle = pd.IndexSlice[:,:,:,:,:,['Cantharellaceae'],:,:,:]
-
-def test1():
-
-    lal = LALearner(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
-                    loader_batch_size=128, selector=chantarelle,
-                    iselector=list(range(100)),
-                    lr_init=0.03, scheduler_step_size=10,
-                    encoder_init='kantflue_grid_ae')
-
-#test1()
