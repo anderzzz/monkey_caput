@@ -25,6 +25,8 @@ class LALearner(_Learner):
                        save_tmp_name='model_in_progress',
                        selector=None, iselector=None,
                        loader_batch_size=16, num_workers=0,
+                       show_batch_progress=True,
+                       deterministic=True,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
                        k_nearest_neighbours=None, clustering_repeats=None, number_of_centroids=None,
@@ -32,13 +34,13 @@ class LALearner(_Learner):
                        n_samples=None,
                        code_merger='mean'):
 
-        super(LALearner, self).__init__(run_label, random_seed, f_out,
-                                        raw_csv_toc, raw_csv_root, grid_crop,
-                                        save_tmp_name,
-                                        selector, iselector, True,
-                                        loader_batch_size, num_workers,
-                                        lr_init, momentum,
-                                        scheduler_step_size, scheduler_gamma)
+        super(LALearner, self).__init__(run_label=run_label, random_seed=random_seed, f_out=f_out,
+                                        raw_csv_toc=raw_csv_toc, raw_csv_root=raw_csv_root, grid_crop=grid_crop,
+                                        save_tmp_name=save_tmp_name,
+                                        selector=selector, iselector=iselector, index_return=True,
+                                        loader_batch_size=loader_batch_size, num_workers=num_workers,
+                                        show_batch_progress=show_batch_progress,
+                                        deterministic=deterministic)
 
         self.inp_k_nearest_neighbours = k_nearest_neighbours
         self.inp_clustering_repeats = clustering_repeats
@@ -46,6 +48,10 @@ class LALearner(_Learner):
         self.inp_temperature = temperature
         self.inp_memory_mixing = memory_mixing
         self.inp_code_merger = code_merger
+        self.inp_lr_init = lr_init
+        self.inp_momentum = momentum
+        self.inp_scheduler_step_size = scheduler_step_size
+        self.inp_scheduler_gamma = scheduler_gamma
 
         self.model = EncoderVGGMerged(merger_type=code_merger)
         self.memory_bank = MemoryBank(n_vectors=n_samples, dim_vector=self.model.channels_code,
@@ -55,10 +61,10 @@ class LALearner(_Learner):
                                               k_nearest_neighbours=self.inp_k_nearest_neighbours,
                                               clustering_repeats=self.inp_clustering_repeats,
                                               number_of_centroids=self.inp_number_of_centroids)
-        self.set_optim(lr=self.inp_lr_init,
-                       scheduler_step_size=self.inp_scheduler_step_size,
-                       scheduler_gamma=self.inp_scheduler_gamma,
-                       parameters=self.model.parameters())
+        self.set_sgd_optim(lr=self.inp_lr_init,
+                           scheduler_step_size=self.inp_scheduler_step_size,
+                           scheduler_gamma=self.inp_scheduler_gamma,
+                           parameters=self.model.parameters())
 
         self.print_inp()
 

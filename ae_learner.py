@@ -20,32 +20,38 @@ class AELearner(_Learner):
                        save_tmp_name='model_in_progress',
                        selector=None, iselector=None,
                        loader_batch_size=16, num_workers=0,
+                       show_batch_progress=True,
+                       deterministic=True,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
                        freeze_encoder=False):
 
-        super(AELearner, self).__init__(run_label, random_seed, f_out,
-                                       raw_csv_toc, raw_csv_root, grid_crop,
-                                       save_tmp_name,
-                                       selector, iselector, False,
-                                       loader_batch_size, num_workers,
-                                       lr_init, momentum,
-                                       scheduler_step_size, scheduler_gamma)
+        super(AELearner, self).__init__(run_label=run_label, random_seed=random_seed, f_out=f_out,
+                                        raw_csv_toc=raw_csv_toc, raw_csv_root=raw_csv_root, grid_crop=grid_crop,
+                                        save_tmp_name=save_tmp_name,
+                                        selector=selector, iselector=iselector, index_return=False,
+                                        loader_batch_size=loader_batch_size, num_workers=num_workers,
+                                        show_batch_progress=show_batch_progress,
+                                        deterministic=deterministic)
 
         self.inp_freeze_encoder = freeze_encoder
+        self.inp_lr_init = lr_init
+        self.inp_momentum = momentum
+        self.inp_scheduler_step_size = scheduler_step_size
+        self.inp_scheduler_gamma = scheduler_gamma
 
         self.model = AutoEncoderVGG()
         self.criterion = nn.MSELoss()
         if self.inp_freeze_encoder:
-            self.set_optim(lr=self.inp_lr_init,
-                           scheduler_step_size=self.inp_scheduler_step_size,
-                           scheduler_gamma=self.inp_scheduler_gamma,
-                           parameters=self.model.decoder.parameters())
+            self.set_sgd_optim(lr=self.inp_lr_init,
+                               scheduler_step_size=self.inp_scheduler_step_size,
+                               scheduler_gamma=self.inp_scheduler_gamma,
+                               parameters=self.model.decoder.parameters())
         else:
-            self.set_optim(lr=self.inp_lr_init,
-                           scheduler_step_size=self.inp_scheduler_step_size,
-                           scheduler_gamma=self.inp_scheduler_gamma,
-                           parameters=self.model.parameters())
+            self.set_sgd_optim(lr=self.inp_lr_init,
+                               scheduler_step_size=self.inp_scheduler_step_size,
+                               scheduler_gamma=self.inp_scheduler_gamma,
+                               parameters=self.model.parameters())
 
         self.print_inp()
 

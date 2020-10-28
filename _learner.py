@@ -1,6 +1,6 @@
-'''The parents to the learners on the fungi image dataset.
+'''The parent to the different learners on the fungi image dataset.
 
-The `_Learner` class should be inherited by any specific model learner, such as an Auto-Encoder or image classifier.
+The `_Learner` class should be inherited by any specific model learner, such as an auto-encoder or clustering method.
 
 Written by: Anders Ohrn, October 2020
 
@@ -10,7 +10,7 @@ import time
 import copy
 import abc
 
-from numpy.random import seed
+from numpy.random import seed, randint
 
 import torch
 from torch.utils.data import DataLoader
@@ -65,14 +65,12 @@ class _Learner(LearnerInterface):
     '''
     STATE_KEY_SAVE = 'ae_model_state'
 
-    def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
+    def __init__(self, run_label=None, random_seed=None, f_out=sys.stdout,
                        raw_csv_toc='toc_full.csv', raw_csv_root='.', grid_crop=True,
-                       save_tmp_name='model_in_progress',
+                       save_tmp_name='model_in_training',
                        selector=None, iselector=None, index_return=False,
                        loader_batch_size=16, num_workers=0,
-                       lr_init=0.01, momentum=0.9,
-                       scheduler_step_size=15, scheduler_gamma=0.1,
-                       show_batch_progress=True):
+                       show_batch_progress=True, deterministic=True):
 
         self.inp_run_label = run_label
         self.inp_random_seed = random_seed
@@ -85,22 +83,18 @@ class _Learner(LearnerInterface):
         self.inp_iselector = iselector
         self.inp_loader_batch_size = loader_batch_size
         self.inp_num_workers = num_workers
-        self.inp_lr_init = lr_init
-        self.inp_momentum = momentum
-        self.inp_scheduler_step_size = scheduler_step_size
-        self.inp_scheduler_gamma = scheduler_gamma
         self.inp_show_batch_progress = show_batch_progress
+        self.inp_deterministic = deterministic
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        # Set random seed and make run deterministic
         seed(self.inp_random_seed)
-        torch.manual_seed(self.inp_random_seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+        torch.manual_seed(randint(2**63))
+        if self.inp_deterministic:
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
 
-        # Initialize Dataset, DataLoader, and Model
-        # TBD: Further abstraction to remove the specific dataset
+        # Initialize the fungi Dataset and DataLoader
         if self.inp_grid_crop:
             self.dataset = FungiImgGridCrop(csv_file=raw_csv_toc, root_dir=raw_csv_root,
                                             iselector=self.inp_iselector,
@@ -111,17 +105,36 @@ class _Learner(LearnerInterface):
                                     iselector=self.inp_iselector,
                                     selector=self.inp_selector,
                                     index_return=index_return)
-        self.dataloader = DataLoader(self.dataset, batch_size=loader_batch_size,
-                                     shuffle=False, num_workers=num_workers)
         self.dataset_size = len(self.dataset)
-        self.model = None
+        self.dataloader = DataLoader(self.dataset,
+                                     batch_size=self.inp_loader_batch_size,
+                                     shuffle=not self.inp_deterministic,
+                                     num_workers=self.inp_num_workers)
 
-    def set_optim(self, parameters, lr=0.01, momentum=0.9, scheduler_step_size=15, scheduler_gamma=0.1):
-        '''Set what parameters to optimize and the meta-parameters of the SGD optimizer
+        # Create the model, optimizer and lr_scheduler attributes, which must be overridden in child class
+        self.model = None
+        self.optimizer = None
+        self.lr_scheduler = None
+
+    def set_sgd_optim(self, parameters, lr=0.01, momentum=0.9, weight_decay=0.0,
+                            scheduler_step_size=15, scheduler_gamma=0.1):
+        '''Override the `optimizer` and `lr_scheduler` attributes with an SGD optimizer and an exponential decay
+        learning rate.
+
+        This is a convenience method for a common special case of the optimization. A child class can define other
+        PyTorch optimizers and learning-rate decay methods.
+
+        Args:
+            parameters: The parameters of the model to optimize
+            lr (float, optional): Initial learning rate. Defaults to 0.01
+            momentum (float, optional): Momentum of SGD. Defaults to 0.9
+            weight_decay (float, optional): L2 regularization of weights. Defaults to 0.0 (no weight regularization)
+            scheduler_step_size (int, optional): Steps between learning-rate update. Defaults to 15
+            scheduler_gamma (float, optional): Factor to reduce learning-rate with. Defaults to 0.1.
 
         '''
-        self.optimizer = optim.SGD(parameters, lr=lr, momentum=momentum)
-        self.exp_lr_scheduler = optim.lr_scheduler.StepLR(self.optimizer,
+        self.optimizer = optim.SGD(parameters, lr=lr, momentum=momentum, weight_decay=weight_decay)
+        self.lr_scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                           step_size=scheduler_step_size,
                                                           gamma=scheduler_gamma)
 
@@ -138,20 +151,36 @@ class _Learner(LearnerInterface):
                 key = attr_name[4:]
                 print('{} : {}'.format(key, attr_value), file=self.inp_f_out)
 
-    def _train(self, n_epochs):
-        '''Train the model a set number of epochs
+    def _check_override(self, model_only=False):
+        '''Check that key attributes have been defined in subclasses prior to any execution
 
         Args:
-            model (nn.Module): The PyTorch module that implements the model to be trained.
-            n_epochs (int): Number of epochs to train the model for.
-            cmp_loss (executable): Function that receives a mini-batch of data from the dataloader and
-                returns a loss with back-propagation method
-            saver_func (executable): Function that receives a path to a file and saves the model state dictionary
-                to said file location.
+            model_only (bool, optional): If only model attribute should be checked. Defaults to False
+
+        Raises:
+            TypeError: If any key attribute not properly overridden
 
         '''
         if not isinstance(self.model, torch.nn.Module):
             raise TypeError('Attribute "model" of {} must be a subclass of the PyTorch Module (torch.nn.Module)'.format(self))
+
+        if not model_only:
+            if not isinstance(self.optimizer, torch.optim.Optimizer):
+                raise TypeError('Attribute "optimizer" of {} must be a subclass of the PyTorch Optimizer (torch.optim.Optimizer)'.format(self))
+            if self.lr_scheduler is None or (not callable(self.lr_scheduler.step)):
+                raise TypeError('Attribute "lr_scheduler" of {} must be a learning rate scheduler of PyTorch (torch.optim.lr_scheduler)'.format(self))
+
+    def _train(self, n_epochs):
+        '''Train the model a set number of epochs.
+
+        The training saves currently best performing models to a temporary file output defined by `save_tmp_name`
+        at initialization. The training utilizes class methods defined in child classes.
+
+        Args:
+            n_epochs (int): Number of epochs to train the model for.
+
+        '''
+        self._check_override()
 
         best_model_wts = copy.deepcopy(self.model.state_dict())
         best_err = 1e20
@@ -163,9 +192,8 @@ class _Learner(LearnerInterface):
             running_err = 0.0
             n_instances = 0
             for inputs in self.dataloader:
-
-                img_inputs = inputs[self.dataset.getkeys.image]
-                img_inputs = img_inputs.to(self.device)
+                size_batch = inputs[self.dataset.getkeys.image].size(0)
+                inputs[self.dataset.getkeys.image] = inputs[self.dataset.getkeys.image].to(self.device)
 
                 # zero the parameter gradients
                 self.optimizer.zero_grad()
@@ -176,17 +204,17 @@ class _Learner(LearnerInterface):
                 # Back-propagate and optimize
                 loss.backward()
                 self.optimizer.step()
-                self.exp_lr_scheduler.step()
+                self.lr_scheduler.step()
 
                 # Update aggregates and reporting
-                running_err += loss.item() * img_inputs.size(0)
+                running_err += loss.item() * size_batch
                 if self.inp_show_batch_progress:
-                    n_instances += img_inputs.size(0)
+                    n_instances += size_batch
                     progress_bar(n_instances, self.dataset_size)
 
             running_err = running_err / self.dataset_size
-            print('Error: {:.4f}'.format(running_err), file=self.inp_f_out)
-            print('', file=self.inp_f_out)
+            print('Error: {:.4f}\n'.format(running_err), file=self.inp_f_out)
+            #print('', file=self.inp_f_out)
 
             if running_err < best_err:
                 best_model_wts = copy.deepcopy(self.model.state_dict())
@@ -196,9 +224,19 @@ class _Learner(LearnerInterface):
         self.model.load_state_dict(best_model_wts)
 
     def _eval_model(self, dloader=None):
-        '''Bla bla
+        '''Generator to evaluate current model for a data collection
+
+        Args:
+            dloader (optional): DataLoader for the DataSet. Defaults to `None` which leads to that the evaluation is
+                done over the data sequence defined during initialization and used by `_train`.
+
+        Yields:
+            outputs (PyTorch Tensor): A batch of output tensors of the model, batch defined by the `dloader`, and
+                the output as provided by the model defined in child class.
 
         '''
+        self._check_override(model_only=True)
+
         if dloader is None:
             dloader = self.dataloader
 
