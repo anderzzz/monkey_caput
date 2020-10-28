@@ -195,6 +195,20 @@ class _Learner(LearnerInterface):
         # load best model weights
         self.model.load_state_dict(best_model_wts)
 
+    def _eval_model(self, dloader=None):
+        '''Bla bla
+
+        '''
+        if dloader is None:
+            dloader = self.dataloader
+
+        self.model.eval()
+        for inputs in dloader:
+            img_inputs = inputs[self.dataset.getkeys.image]
+            img_inputs = img_inputs.to(self.device)
+
+            yield self.model(img_inputs)
+
 
 def progress_bar(current, total, barlength=20):
     '''Print progress of training of a batch. Helpful in PyCharm'''

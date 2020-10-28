@@ -5,6 +5,7 @@ Written by: Anders Ohrn, October 2020
 '''
 import sys
 import pandas as pd
+import numpy as np
 
 import torch
 
@@ -94,8 +95,20 @@ class LALearner(_Learner):
 
         outputs = self.model(image)
         loss = self.criterion(outputs, idx.detach().numpy())
-        print (loss)
         return loss
+
+    def eval(self, clusterer, clusterer_kwargs={}, dloader=None):
+        '''Bla bla
+
+        '''
+        all_output = None
+        for model_output in self._eval_model(dloader):
+            if all_output is None:
+                all_output = model_output.detach().numpy()
+            else:
+                all_output = np.append(all_output, model_output.detach().numpy(), axis=0)
+
+        return clusterer(all_output, **clusterer_kwargs)
 
 
 chantarelle_flue = pd.IndexSlice[:,:,:,:,:,['Cantharellaceae','Amanitaceae'],:,:,:]
