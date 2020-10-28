@@ -210,7 +210,7 @@ class LocalAggregationLoss(nn.Module):
         if not ragged and not force_stack:
             vals = torch.tensor([np.compress(ind, self.memory_bank.vectors, axis=0) for ind in indices],
                                 requires_grad=False)
-            v_dots = torch.bmm(vals, codes.unsqueeze(-1))
+            v_dots = torch.matmul(vals, codes.unsqueeze(-1))
             exp_values = torch.exp(torch.div(v_dots, self.temperature))
             xx = torch.sum(exp_values, dim=1).squeeze(-1)
 
@@ -242,9 +242,7 @@ class LocalAggregationLoss(nn.Module):
         '''
         assert codes.shape[0] == len(indices)
 
-        print (codes.shape)
-        print (indices.shape)
-        raise RuntimeError
+        codes = codes.type(torch.DoubleTensor)
         code_data = normalize(codes.detach().numpy(), axis=1)
 
         # Compute and collect arrays of indices that define the constants in the loss function. Note that
@@ -259,8 +257,6 @@ class LocalAggregationLoss(nn.Module):
         d1 = self._prob_density(v, self.background_neighbours, self.force_stacking)
         d2 = self._prob_density(v, self.neighbour_intersect, self.force_stacking)
         loss_cluster = torch.sum(torch.log(d1) - torch.log(d2)) / codes.shape[0]
-
-        raise RuntimeError
 
         return loss_cluster
 

@@ -283,7 +283,6 @@ class EncoderVGGMerged(EncoderVGG):
         '''Bla bla
 
         '''
-        print (x.shape)
         x_current, _ = super().forward(x)
         x_code = self.code_post_process(x_current, **self.code_post_process_kwargs)
 

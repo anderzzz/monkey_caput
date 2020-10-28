@@ -92,12 +92,9 @@ class LALearner(_Learner):
     def compute_loss(self, image, idx):
         '''Method to compute the loss of a model given an input.'''
 
-        #
-        # CONTINUE HERE
-        #
-
         outputs = self.model(image)
-        loss = self.criterion(outputs, idx)
+        loss = self.criterion(outputs, idx.detach().numpy())
+        print (loss)
         return loss
 
 
