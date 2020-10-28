@@ -3,11 +3,14 @@
 Written By: Anders Ohrn, September 2020
 
 '''
+import torch
 from torch import nn
 from torchvision import models
 
 class EncoderVGG(nn.Module):
+    '''Bla bla
 
+    '''
     channels_in = 3
     channels_code = 512
 
@@ -93,7 +96,9 @@ class EncoderVGG(nn.Module):
 
 
 class DecoderVGG(nn.Module):
+    '''Bla bla
 
+    '''
     channels_in = EncoderVGG.channels_code
     channels_out = 3
 
@@ -254,3 +259,32 @@ class AutoEncoderVGG(nn.Module):
         x_prime = self.decoder(code, pool_indices)
 
         return x_prime
+
+class EncoderVGGMerged(EncoderVGG):
+    '''Bla bla
+
+    '''
+    def __init__(self, merger_type=None, pretrained_params=True):
+        super(EncoderVGGMerged, self).__init__(pretrained_params=pretrained_params)
+
+        if merger_type is None:
+            self.code_post_process = lambda x: x
+            self.code_post_process_kwargs = {}
+        elif merger_type == 'mean':
+            self.code_post_process = torch.mean
+            self.code_post_process_kwargs = {'dim' : (-2, -1)}
+        elif merger_type == 'flatten':
+            self.code_post_process = torch.flatten
+            self.code_post_process_kwargs = {'start_dim' : 1, 'end_dim' : -1}
+        else:
+            raise ValueError('Unknown merger type for the encoder code: {}'.format(merger_type))
+
+    def forward(self, x):
+        '''Bla bla
+
+        '''
+        print (x.shape)
+        x_current, _ = super().forward(x)
+        x_code = self.code_post_process(x_current, **self.code_post_process_kwargs)
+
+        return x_code
