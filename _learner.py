@@ -1,11 +1,16 @@
-'''Bla bla
+'''The parents to the learners on the fungi image dataset.
+
+The `_Learner` class should be inherited by any specific model learner, such as an Auto-Encoder or image classifier.
+
+Written by: Anders Ohrn, October 2020
 
 '''
 import sys
 import time
 import copy
-from numpy.random import seed
 import abc
+
+from numpy.random import seed
 
 import torch
 from torch.utils.data import DataLoader
@@ -14,6 +19,10 @@ from torch import optim
 from fungiimg import FungiImgGridCrop, FungiImg
 
 class LearnerInterface(metaclass=abc.ABCMeta):
+    '''Formal interface for the Learner subclasses. Any class inheriting `_Learner` will have to satisfy this
+    interface, otherwise it will not instantiate
+
+    '''
     @classmethod
     def __subclasshook__(cls, subclass):
         return (hasattr(subclass, 'train') and
@@ -21,7 +30,9 @@ class LearnerInterface(metaclass=abc.ABCMeta):
                 hasattr(subclass, 'save_model') and
                 callable(subclass.save_model) and
                 hasattr(subclass, 'compute_loss') and
-                callable(subclass.compute_loss))
+                callable(subclass.compute_loss) and
+                hasattr(subclass, 'load_model') and
+                callable(subclass.load_model))
 
     @abc.abstractmethod
     def train(self, n_epochs: int):
@@ -45,7 +56,11 @@ class LearnerInterface(metaclass=abc.ABCMeta):
 
 
 class _Learner(LearnerInterface):
-    '''Parent class for the auto-encoder and clustering runners based on the VGG template model
+    '''Parent class for models working with fungi data. A child class has to implement a `compute_loss` method,
+    `save_model` and `load_model` methods, and a `train` method, which calls the `_train` method of the parent.
+
+    Args:
+        To be written
 
     '''
     STATE_KEY_SAVE = 'ae_model_state'
@@ -56,7 +71,8 @@ class _Learner(LearnerInterface):
                        selector=None, iselector=None, index_return=False,
                        loader_batch_size=16, num_workers=0,
                        lr_init=0.01, momentum=0.9,
-                       scheduler_step_size=15, scheduler_gamma=0.1):
+                       scheduler_step_size=15, scheduler_gamma=0.1,
+                       show_batch_progress=True):
 
         self.inp_run_label = run_label
         self.inp_random_seed = random_seed
@@ -73,6 +89,7 @@ class _Learner(LearnerInterface):
         self.inp_momentum = momentum
         self.inp_scheduler_step_size = scheduler_step_size
         self.inp_scheduler_gamma = scheduler_gamma
+        self.inp_show_batch_progress = show_batch_progress
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -83,6 +100,7 @@ class _Learner(LearnerInterface):
         torch.backends.cudnn.benchmark = False
 
         # Initialize Dataset, DataLoader, and Model
+        # TBD: Further abstraction to remove the specific dataset
         if self.inp_grid_crop:
             self.dataset = FungiImgGridCrop(csv_file=raw_csv_toc, root_dir=raw_csv_root,
                                             iselector=self.inp_iselector,
@@ -162,8 +180,9 @@ class _Learner(LearnerInterface):
 
                 # Update aggregates and reporting
                 running_err += loss.item() * img_inputs.size(0)
-                n_instances += img_inputs.size(0)
-                progress_bar(n_instances, self.dataset_size)
+                if self.inp_show_batch_progress:
+                    n_instances += img_inputs.size(0)
+                    progress_bar(n_instances, self.dataset_size)
 
             running_err = running_err / self.dataset_size
             print('Error: {:.4f}'.format(running_err), file=self.inp_f_out)
@@ -178,6 +197,7 @@ class _Learner(LearnerInterface):
 
 
 def progress_bar(current, total, barlength=20):
+    '''Print progress of training of a batch. Helpful in PyCharm'''
     percent = float(current) / total
     arrow = '-' * int(percent * barlength - 1) + '>'
     spaces = ' ' * (barlength - len(arrow))
