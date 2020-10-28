@@ -1,4 +1,4 @@
-'''Auto-encoder based on the VGG-16 with batch normalization
+'''Encoder, Decoder and Auto-encoder based on the VGG-16 with batch normalization
 
 Written By: Anders Ohrn, September 2020
 
@@ -8,7 +8,11 @@ from torch import nn
 from torchvision import models
 
 class EncoderVGG(nn.Module):
-    '''Bla bla
+    '''Encoder of image based on the architecture of VGG-16 with batch normalization.
+
+    Args:
+        pretrained_params (bool, optional): If the network should be populated with pre-trained VGG parameters.
+            Defaults to True.
 
     '''
     channels_in = 3
@@ -96,7 +100,16 @@ class EncoderVGG(nn.Module):
 
 
 class DecoderVGG(nn.Module):
-    '''Bla bla
+    '''Decoder of code based on the architecture of VGG-16 with batch normalization.
+
+    The decoder is created from a pseudo-inversion of the encoder based on VGG-16 with batch normalization. The
+    pesudo-inversion is obtained by (1) replacing max pooling layers in the encoder with max un-pooling layers with
+    pooling indices from the mirror image max pooling layer, and by (2) replacing 2D convolutions with transposed
+    2D convolutions. The ReLU and bathc normalization layers are the same as in the encoder, that is subsequent to
+    the convolution layer.
+
+    Args:
+        encoder: The encoder instance of `EncoderVGG` that is to be inverted into a decoder
 
     '''
     channels_in = EncoderVGG.channels_code
@@ -173,7 +186,12 @@ class DecoderVGG(nn.Module):
 
 
 class AutoEncoderVGG(nn.Module):
-    '''Auto-Encoder based on the VGG-16 with batch normalization template model
+    '''Auto-Encoder based on the VGG-16 with batch normalization template model. The class is comprised of
+    an encoder and a decoder.
+
+    Args:
+        pretrained_params (bool, optional): If the network should be populated with pre-trained VGG parameters.
+            Defaults to True.
 
     '''
     channels_in = EncoderVGG.channels_in
@@ -260,8 +278,20 @@ class AutoEncoderVGG(nn.Module):
 
         return x_prime
 
+
 class EncoderVGGMerged(EncoderVGG):
-    '''Bla bla
+    '''Special case of the VGG Encoder wherein the code is merged along the height/width dimension. This is a thin child
+    class of `EncoderVGG`.
+
+    Args:
+        merger_type (str, optional): Defines how the code is merged. If `None`, there is no merger and the identical
+            functionality to the parent class `EncoderVGG` is obtained. If "mean", the channels for the height/width
+            code cells are averaged; the number of channels are identical between input and output. If "flatten", the
+            channels for the height/width code cells are stacked on top each other; the number of channels of the output
+            is the number of channels of the input multiplied by number of height cells and multiplied by the number
+            of width cells.
+        pretrained_params (bool, optional): If the network should be populated with pre-trained VGG parameters.
+            Defaults to True.
 
     '''
     def __init__(self, merger_type=None, pretrained_params=True):
@@ -280,7 +310,13 @@ class EncoderVGGMerged(EncoderVGG):
             raise ValueError('Unknown merger type for the encoder code: {}'.format(merger_type))
 
     def forward(self, x):
-        '''Bla bla
+        '''Execute the encoder on the image input
+
+        Args:
+            x (Tensor): image tensor
+
+        Returns:
+            x_code (Tensor): merged code tensor
 
         '''
         x_current, _ = super().forward(x)
