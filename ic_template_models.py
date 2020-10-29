@@ -74,7 +74,7 @@ def initialize_model(label, num_classes, use_pretrained=True, feature_extracting
         input_size = 224
 
     else:
-        raise ValueError('Model with label {} not defined'.format(label))
+        raise ValueError('Template model with label {} not defined'.format(label))
 
     return model, input_size
 

@@ -141,7 +141,7 @@ class FungiImg(Dataset):
 
         return_ = {self.getkeys.image : image}
         if not self.label_keys is None:
-            return_[self.getkeys.image] = row[1]
+            return_[self.getkeys.label] = row[1]
         if self.index_return:
             return_[self.getkeys.idx] = idx
 
