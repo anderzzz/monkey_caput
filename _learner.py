@@ -16,7 +16,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch import optim
 
-from fungiimg import FungiImgGridCrop, FungiImg
+import fungidata
 
 class LearnerInterface(metaclass=abc.ABCMeta):
     '''Formal interface for the Learner subclasses. Any class inheriting `_Learner` will have to satisfy this
@@ -65,10 +65,11 @@ class _Learner(LearnerInterface):
     '''
     STATE_KEY_SAVE = 'ae_model_state'
 
-    def __init__(self, run_label=None, random_seed=None, f_out=sys.stdout,
-                       raw_csv_toc='toc_full.csv', raw_csv_root='.', grid_crop=True,
+    def __init__(self, run_label='', random_seed=None, f_out=sys.stdout,
+                       raw_csv_toc=None, raw_csv_root=None,
                        save_tmp_name='model_in_training',
-                       selector=None, iselector=None, index_return=False,
+                       selector=None, iselector=None, label_keys=None,
+                       dataset_type='full basic', dataset_kwargs={},
                        loader_batch_size=16, num_workers=0,
                        show_batch_progress=True, deterministic=True):
 
@@ -77,10 +78,12 @@ class _Learner(LearnerInterface):
         self.inp_f_out = f_out
         self.inp_raw_csv_toc = raw_csv_toc
         self.inp_raw_csv_root = raw_csv_root
-        self.inp_grid_crop = grid_crop
         self.inp_save_tmp_name = save_tmp_name
         self.inp_selector = selector
         self.inp_iselector = iselector
+        self.inp_dataset_type = dataset_type
+        self.inp_dataset_kwargs = dataset_kwargs
+        self.inp_label_keys = label_keys
         self.inp_loader_batch_size = loader_batch_size
         self.inp_num_workers = num_workers
         self.inp_show_batch_progress = show_batch_progress
@@ -94,17 +97,10 @@ class _Learner(LearnerInterface):
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
 
-        # Initialize the fungi Dataset and DataLoader
-        if self.inp_grid_crop:
-            self.dataset = FungiImgGridCrop(csv_file=raw_csv_toc, root_dir=raw_csv_root,
-                                            iselector=self.inp_iselector,
-                                            selector=self.inp_selector,
-                                            index_return=index_return)
-        else:
-            self.dataset = FungiImg(csv_file=raw_csv_toc, root_dir=raw_csv_root,
-                                    iselector=self.inp_iselector,
-                                    selector=self.inp_selector,
-                                    index_return=index_return)
+        # Define the dataset and method to load it during training
+        self.dataset = fungidata.factory.create(self.inp_dataset_type, raw_csv_toc, raw_csv_root,
+                                                selector=selector, iselector=iselector,
+                                                **self.inp_dataset_kwargs)
         self.dataset_size = len(self.dataset)
         self.dataloader = DataLoader(self.dataset,
                                      batch_size=self.inp_loader_batch_size,
@@ -192,8 +188,8 @@ class _Learner(LearnerInterface):
             running_err = 0.0
             n_instances = 0
             for inputs in self.dataloader:
-                size_batch = inputs[self.dataset.getkeys.image].size(0)
-                inputs[self.dataset.getkeys.image] = inputs[self.dataset.getkeys.image].to(self.device)
+                size_batch = inputs[self.dataset.returnkey.image].size(0)
+                inputs[self.dataset.returnkey.image] = inputs[self.dataset.returnkey.image].to(self.device)
 
                 # zero the parameter gradients
                 self.optimizer.zero_grad()

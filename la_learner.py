@@ -19,24 +19,24 @@ class LALearner(_Learner):
         To be written
 
     '''
-    def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
-                       raw_csv_toc='toc_full.csv', raw_csv_root='.', grid_crop=True,
-                       save_tmp_name='model_in_progress',
+    def __init__(self, run_label='', random_seed=None, f_out=sys.stdout,
+                       raw_csv_toc=None, raw_csv_root=None,
+                       save_tmp_name='model_in_training',
                        selector=None, iselector=None,
+                       dataset_type='full basic idx', dataset_kwargs={},
                        loader_batch_size=16, num_workers=0,
-                       show_batch_progress=True,
-                       deterministic=True,
+                       show_batch_progress=True, deterministic=True,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
                        k_nearest_neighbours=None, clustering_repeats=None, number_of_centroids=None,
-                       temperature=None, memory_mixing=None,
-                       n_samples=None,
+                       temperature=None, memory_mixing=None, n_samples=None,
                        code_merger='mean'):
 
         super(LALearner, self).__init__(run_label=run_label, random_seed=random_seed, f_out=f_out,
-                                        raw_csv_toc=raw_csv_toc, raw_csv_root=raw_csv_root, grid_crop=grid_crop,
+                                        raw_csv_toc=raw_csv_toc, raw_csv_root=raw_csv_root,
                                         save_tmp_name=save_tmp_name,
-                                        selector=selector, iselector=iselector, index_return=True,
+                                        selector=selector, iselector=iselector,
+                                        dataset_type=dataset_type, dataset_kwargs=dataset_kwargs,
                                         loader_batch_size=loader_batch_size, num_workers=num_workers,
                                         show_batch_progress=show_batch_progress,
                                         deterministic=deterministic)
@@ -53,9 +53,9 @@ class LALearner(_Learner):
         self.inp_scheduler_gamma = scheduler_gamma
 
         self.model = EncoderVGGMerged(merger_type=code_merger)
-        self.memory_bank = MemoryBank(n_vectors=n_samples, dim_vector=self.model.channels_code,
-                                      memory_mixing_rate=memory_mixing)
-        self.criterion = LocalAggregationLoss(memory_bank=self.memory_bank,
+        memory_bank = MemoryBank(n_vectors=n_samples, dim_vector=self.model.channels_code,
+                                      memory_mixing_rate=self.inp_memory_mixing)
+        self.criterion = LocalAggregationLoss(memory_bank=memory_bank,
                                               temperature=self.inp_temperature,
                                               k_nearest_neighbours=self.inp_k_nearest_neighbours,
                                               clustering_repeats=self.inp_clustering_repeats,
@@ -107,8 +107,8 @@ class LALearner(_Learner):
     def compute_loss(self, image, idx):
         '''Method to compute the loss of a model given an input.
 
-        The arguments to this method have to be named as the corresponding output from the Dataset. The data class
-        `DataGetKeys` define these string constants for the Dataset.
+        The argument to this method has to be named as the corresponding output from the Dataset. The name of the
+        items obtained from the Dataset are available in the attributes of `self.dataset.returnkey`
 
         Args:
             image (PyTorch Tensor): the batch of images to compute loss for
