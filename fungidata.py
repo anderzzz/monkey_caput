@@ -81,12 +81,15 @@ class FungiFullBasicLabelledData(Dataset):
             order to select a subset of images on basis of MultiIndex values. Defaults to None.
         iselector (optional): Colletion of integer indices or callable that is passed to the Pandas `.iloc`
             method in order to select a subset of images. This is applied after any `selector` filtering.
+        min_dim (int, optional): min_dim (int): Length of shortest dimension of transformed output image
+        square (bool, optional): If True, the source image (after resizing of shortest dimension) is cropped at
+            the centre such that output image is square. Defaults to False
 
     Attributes:
           returnkey : Keys to access values of return dictionary for __getitem__
 
     '''
-    def __init__(self, csv_file, img_root_dir, label_keys, selector=None, iselector=None):
+    def __init__(self, csv_file, img_root_dir, label_keys, selector=None, iselector=None, min_dim=224, square=False):
         super(FungiFullBasicLabelledData, self).__init__()
 
         self._core = _FungiDataCore(csv_file, img_root_dir, selector=selector, iselector=iselector,
@@ -94,7 +97,7 @@ class FungiFullBasicLabelledData(Dataset):
         self._core._set_level_attr(self)
         self.returnkey = DataGetKeys()
         del self.returnkey.idx
-        self._transform = img_transforms.StandardTransform()
+        self._transform = img_transforms.StandardTransform(min_dim=min_dim, square=square)
 
     def __len__(self):
         return self._core.__len__()
@@ -394,10 +397,12 @@ class FungiFullBasicLabelledDataBuilder(object):
     def __init__(self):
         self._instance = None
 
-    def __call__(self, csv_file, img_root_dir, label_keys, selector=None, iselector=None, **_ignored):
+    def __call__(self, csv_file, img_root_dir, label_keys, selector=None, iselector=None,
+                       min_dim=224, square=False, **_ignored):
         self._instance = FungiFullBasicLabelledData(csv_file=csv_file, img_root_dir=img_root_dir,
                                                     label_keys=label_keys,
-                                                    selector=selector, iselector=iselector)
+                                                    selector=selector, iselector=iselector,
+                                                    min_dim=min_dim, square=square)
         return self._instance
 
 class FungiFullAugLabelledDataBuilder(object):
@@ -470,232 +475,8 @@ class FungiDataFactory(object):
 
 factory = FungiDataFactory()
 factory.register_builder('full basic', FungiFullBasicDataBuilder())
-factory.register_builder('full basic labelled', FungiFullBasicLabelledData())
+factory.register_builder('full basic labelled', FungiFullBasicLabelledDataBuilder())
 factory.register_builder('full aug labelled', FungiFullAugLabelledDataBuilder())
 factory.register_builder('full basic idx', FungiFullBasicIdxDataBuilder())
 factory.register_builder('grid basic', FungiGridBasicDataBuilder())
 factory.register_builder('grid basic idx', FungiGridBasicIdxDataBuilder())
-
-# class FungiImg(Dataset):
-#     '''The Fungi Image Dataset Class
-#
-#     The class presupposes that the fungi data is organized in a CSV table with the headers:
-#
-#         `Kingdom, Division, Subdivision, Class, Order, Family, Genus, Species, InstanceIndex, ImageName`
-#
-#     An example instantiation that can be used for supervised training of binary classifier:
-#         `FungiImg(csv_file='toc.csv', root_dir='./fungi_imgs',
-#                   selector=pd.IndexSlice[:,:,:,:,:,['Cantharellaceae', 'Amanitaceae'],:,:,:],
-#                   transform=StandardTransform(244, to_tensor=True, normalize=True),
-#                   label_keys=('Family == "Cantharellaceae"', 'Family == "Amanitaceae"'))`
-#
-#     An example instantiation that can be used to access the first 100 images:
-#         `FungiImg(csv_file='toc.csv', root_dir='./fungi_imgs',
-#                   iselector=list(range(100)),
-#                   transform=StandardTransform(244, to_tensor=True, normalize=True))`
-#
-#     Args:
-#         csv_file (string): Path to the csv file with image meta data.
-#         root_dir (string): Directory with all the images organized in subfolders.
-#         selector (optional): Pandas IndexSlice or callable that is passed to the Pandas `.loc` method in
-#             order to select a subset of images on basis of MultiIndex values. Defaults to None.
-#         iselector (optional): Colletion of integer indices or callable that is passed to the Pandas `.iloc`
-#             method in order to select a subset of images. This is applied after any `selector` filtering.
-#         transform (callable, optional): Optional image transform to be applied. Defaults to None.
-#         label_keys (iterable of str): Collection of strings pass to the Pandas `.query` method in order
-#             to define subsets of the data that should be assigned integer class labels. If None, the
-#             indexing of the class returns the image tensor object, if not None, the indexing of the class
-#             returns the image tensor object and the integer class label.
-#         index_return (bool, optional): If True, the `__getitem__` method returns in addition to other things,
-#             the index associated with its other returned objects. Defaults to False.
-#
-#     Attributes:
-#         n_species (int): Number of fungi species in DataSet
-#         n_genus (int) : Number of fungi genus in DataSet
-#         n_family (int) : Number of fungi families in DataSet
-#         n_order (int) : Number of fungi orders in DataSet
-#         n_instance_species (dict) : Number of instances of each fungi species in DataSet
-#         n_instance_genus (dict) : Number of instances of each fungi genus in DataSet
-#         n_instance_family (dict) : Number of instances of each fungi family in DataSet
-#         n_instance_order (dict) : Number of instances of each fungi orders in DataSet
-#
-#     '''
-#     def __init__(self, csv_file, root_dir, selector=None, iselector=None, transform=None,
-#                  label_keys=None, index_return=False):
-#
-#         self.img_toc = pd.read_csv(csv_file, index_col=(0,1,2,3,4,5,6,7,8))
-#         self.root_dir = root_dir
-#         self.transform = transform
-#         self.label_keys = label_keys
-#         self.index_return = index_return
-#
-#         self.getkeys = DataGetKeys()
-#
-#         if not selector is None:
-#             self.img_toc = self.img_toc.loc[selector]
-#
-#         if not iselector is None:
-#             self.img_toc = self.img_toc.iloc[iselector]
-#
-#         # Extend the data table with labels if requested. This changes what the __getitem__ returns
-#         if not self.label_keys is None:
-#             self.img_toc = pd.concat(self._assign_label(self.label_keys))
-#
-#         self.n_species = self._n_x('Species')
-#         self.n_genus = self._n_x('Genus')
-#         self.n_family = self._n_x('Family')
-#         self.n_order = self._n_x('Order')
-#         self.n_instance_species = self._n_instances_x('Species')
-#         self.n_instance_genus = self._n_instances_x('Genus')
-#         self.n_instance_family = self._n_instances_x('Family')
-#         self.n_instance_order = self._n_instances_x('Order')
-#
-#     def __len__(self):
-#         return len(self.img_toc)
-#
-#     def __getitem__(self, idx):
-#         '''Get data of given index.
-#
-#         Note that the method returns the image and/or the associated ground truth label depending on the `label_keys`
-#         argument during initialization. Optionally the indeces are returned as well, which means a DataLoader will
-#         return these as well.
-#
-#         Returns:
-#             return_data (dict): Dictionary with return data. The content of the dictionary depends on the
-#                 initialization. At least it contains the image tensor. Optionally image label and
-#             image (Tensor): an image or images in the dataset
-#             label: ground truth label or labels that specifies ground truth class of the image or images. This is
-#                 only returned if `label_keys` is not `None` in initialization.
-#             idx (Tensor): one index or several indices of the images retrieved. This is only returned if `index_return`
-#                 is `True` in initialization.
-#
-#         '''
-#         if torch.is_tensor(idx):
-#             idx = idx.tolist()
-#
-#         row = self.img_toc.iloc[idx]
-#         img_name = row[0]
-#
-#         rel_path = list(row.name)[1:-1]
-#         rel_path.append(img_name)
-#         img_name = os.path.join(self.root_dir, *tuple(rel_path))
-#         image = io.imread(img_name)
-#
-#         if not self.transform is None:
-#             image = self.transform(image)
-#
-#         return_ = {self.getkeys.image : image}
-#         if not self.label_keys is None:
-#             return_[self.getkeys.label] = row[1]
-#         if self.index_return:
-#             return_[self.getkeys.idx] = idx
-#
-#         return return_
-#
-#     def info_on_(self, idx):
-#         return self.img_toc.iloc[idx].name, self.img_toc.iloc[idx][0]
-#
-#     def _assign_label(self, l_keys, int_start=0):
-#         '''Assign label to data based on family, genus, species selections
-#
-#         The label keys are query strings for Pandas, as described here:
-#         https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.query.html
-#
-#         Each query string define a class. The query string can refer to individual species, genus, family etc. or
-#         collections thereof. For example, the tuple `('Family == "Cantharellaceae"', 'Family == "Amanitaceae"')`
-#         defines two labels for all fungi in either of the two families.
-#
-#         Args:
-#             l_keys (iterable): list of query strings for Pandas DataFrame, where each query string defines a class to be
-#                 assigned a unique integer label.
-#             int_start (int, optional): the first integer class label. Defaults to 0.
-#
-#         Returns:
-#             category_slices (list): List of DataFrames each corresponding to the categories. The list can be
-#                 concatenated in order to form a single DataFrame
-#
-#         '''
-#         category_slices = []
-#         for label_int, query_label in enumerate(l_keys):
-#             subset_label = self.img_toc.query(query_label)
-#
-#             if len(subset_label) > 0:
-#                 subset_label.loc[:, 'ClassLabel'] = label_int + int_start
-#                 subset_label = subset_label.astype({'ClassLabel': 'int64'})
-#                 category_slices.append(subset_label)
-#
-#         return category_slices
-#
-#     def _n_x(self, x_label):
-#         '''Compute number of distinct types of fungi at a given step in the hierarchy'''
-#         return len(self.img_toc.groupby(x_label))
-#
-#     def _n_instances_x(self, x_label):
-#         '''Compute number of images for each type of fungi at a given step in the hierarchy'''
-#         return self.img_toc.groupby(x_label).count()[RawData.HEADERS.value[-1]].to_dict()
-#
-#     @property
-#     def label_semantics(self):
-#         '''The dictionary that maps '''
-#         return dict([(count, label_select) for count, label_select in enumerate(self.label_keys)])
-#
-#
-# class FungiImgGridCrop(Dataset):
-#     '''Fungi image data set class, with each image a grid square slice from the source image
-#
-#     The class presupposes that the fungi data is organized in a CSV table with the headers:
-#
-#         `Kingdom, Division, Subdivision, Class, Order, Family, Genus, Species, InstanceIndex, ImageName`
-#
-#     Args:
-#         csv_file (string): Path to the csv file with image meta data.
-#         root_dir (string): Directory with all the images organized in subfolders.
-#         selector (optional): Pandas IndexSlice or callable that is passed to the Pandas `.loc` method in
-#             order to select a subset of images on basis of MultiIndex values. Defaults to None.
-#         iselector (optional): Colletion of integer indices or callable that is passed to the Pandas `.iloc`
-#             method in order to select a subset of images. This is applied after any `selector` filtering.
-#         index_return (bool, optional): If True, the `__getitem__` method returns in addition to other things,
-#             the index associated with its other returned objects. Defaults to False.
-#         img_input_dim (int): Length and height of square of source image to be sliced by grid.
-#         img_n_splits (int): Number of slices per side, thus total number of slices for one source image
-#             will be `img_n_splits * img_n_splits`.
-#         crop_step_size (int): Number of pixels between grid lines
-#         crop_dim (int): Length and height of grid squares.
-#
-#     Raises:
-#         GridMakerError: In case the grid cropping specifications are not adding up
-#
-#     '''
-#     def __init__(self, csv_file, root_dir, selector=None, iselector=None, index_return=False,
-#                  img_input_dim=224, img_n_splits=6, crop_step_size=32, crop_dim=64):
-#
-#         self.fungiimg = FungiImg(csv_file=csv_file, root_dir=root_dir,
-#                                  selector=selector, iselector=iselector, index_return=index_return,
-#                                  transform=None,
-#                                  label_keys=None)
-#         self.index_return = self.fungiimg.index_return
-#         self.getkeys = self.fungiimg.getkeys
-#
-#         self.cropper = OverlapGridTransform(img_input_dim, img_n_splits, crop_step_size, crop_dim)
-#
-#     def __len__(self):
-#         return self.cropper.n_blocks * self.fungiimg.__len__()
-#
-#     def __getitem__(self, idx):
-#         '''Get data of given index
-#
-#         Returns:
-#             image (Tensor): one or multiple image grid square units in the dataset
-#
-#         '''
-#         idx_fungi = int(np.floor(idx / self.cropper.n_blocks))
-#         idx_sub = idx % self.cropper.n_blocks
-#         out_full_img = self.fungiimg.__getitem__(idx_fungi)
-#
-#         return_ = {}
-#         if self.index_return:
-#             return_[self.getkeys.idx] = idx
-#         img_crops = self.cropper(out_full_img[self.getkeys.image])
-#         return_[self.getkeys.image] = img_crops[idx_sub]
-#
-#         return return_

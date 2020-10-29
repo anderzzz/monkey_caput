@@ -68,7 +68,7 @@ class _Learner(LearnerInterface):
     def __init__(self, run_label='', random_seed=None, f_out=sys.stdout,
                        raw_csv_toc=None, raw_csv_root=None,
                        save_tmp_name='model_in_training',
-                       selector=None, iselector=None, label_keys=None,
+                       selector=None, iselector=None,
                        dataset_type='full basic', dataset_kwargs={},
                        loader_batch_size=16, num_workers=0,
                        show_batch_progress=True, deterministic=True):
@@ -82,8 +82,6 @@ class _Learner(LearnerInterface):
         self.inp_selector = selector
         self.inp_iselector = iselector
         self.inp_dataset_type = dataset_type
-        self.inp_dataset_kwargs = dataset_kwargs
-        self.inp_label_keys = label_keys
         self.inp_loader_batch_size = loader_batch_size
         self.inp_num_workers = num_workers
         self.inp_show_batch_progress = show_batch_progress
@@ -100,7 +98,7 @@ class _Learner(LearnerInterface):
         # Define the dataset and method to load it during training
         self.dataset = fungidata.factory.create(self.inp_dataset_type, raw_csv_toc, raw_csv_root,
                                                 selector=selector, iselector=iselector,
-                                                **self.inp_dataset_kwargs)
+                                                **dataset_kwargs)
         self.dataset_size = len(self.dataset)
         self.dataloader = DataLoader(self.dataset,
                                      batch_size=self.inp_loader_batch_size,

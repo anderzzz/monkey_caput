@@ -11,35 +11,41 @@ from _learner import _Learner
 from ic_template_models import initialize_model
 
 class ICLearner(_Learner):
-    '''Bla bla
+    '''Image Classifier Learner class applied to the fungi image dataset for clustering of images
+
+    Args:
+        To be written
 
     '''
-    def __init__(self, run_label=None, random_seed=42, f_out=sys.stdout,
-                       raw_csv_toc='toc_full.csv', raw_csv_root='.',
-                       save_tmp_name='model_in_progress',
+    def __init__(self, run_label='', random_seed=None, f_out=sys.stdout,
+                       raw_csv_toc=None, raw_csv_root=None,
+                       save_tmp_name='model_in_training',
                        selector=None, iselector=None,
+                       dataset_type='full basic labelled',
                        loader_batch_size=16, num_workers=0,
-                       show_batch_progress=True,
-                       deterministic=True,
+                       show_batch_progress=True, deterministic=True,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
-                       ic_model='vgg', label_keys=None):
+                       ic_model='vgg',
+                       label_keys=None, min_dim=224):
 
+        dataset_kwargs = {'label_keys': label_keys, 'min_dim': min_dim}
         super(ICLearner, self).__init__(run_label=run_label, random_seed=random_seed, f_out=f_out,
                                         raw_csv_toc=raw_csv_toc, raw_csv_root=raw_csv_root,
                                         save_tmp_name=save_tmp_name,
-                                        selector=selector, iselector=iselector, index_return=False,
-                                        label_keys=label_keys,
+                                        selector=selector, iselector=iselector,
+                                        dataset_type=dataset_type, dataset_kwargs=dataset_kwargs,
                                         loader_batch_size=loader_batch_size, num_workers=num_workers,
                                         show_batch_progress=show_batch_progress,
-                                        deterministic=deterministic,
-                                        grid_crop=False)
+                                        deterministic=deterministic)
 
         self.inp_lr_init = lr_init
         self.inp_momentum = momentum
         self.inp_scheduler_step_size = scheduler_step_size
         self.inp_scheduler_gamma = scheduler_gamma
         self.inp_ic_model = ic_model
+        self.inp_label_keys = label_keys
+        self.inp_min_dim = 224
 
         self.model, min_size = initialize_model(self.inp_ic_model, len(label_keys))
         self.criterion = nn.CrossEntropyLoss()
