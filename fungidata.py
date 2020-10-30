@@ -128,7 +128,8 @@ class FungiFullAugLabelledData(Dataset):
           returnkey : Keys to access values of return dictionary for __getitem__
 
     '''
-    def __init__(self, csv_file, img_root_dir, label_keys, aug_multiplicity, aug_label, min_dim=224, selector=None, iselector=None):
+    def __init__(self, csv_file, img_root_dir, label_keys, aug_multiplicity, aug_label, min_dim=224, square=False,
+                 selector=None, iselector=None):
         super(FungiFullAugLabelledData, self).__init__()
 
         self._core = _FungiDataCore(csv_file, img_root_dir, selector=selector, iselector=iselector,
@@ -137,17 +138,19 @@ class FungiFullAugLabelledData(Dataset):
         self.returnkey = DataGetKeys()
         del self.returnkey.idx
 
+        self._transform = [img_transforms.StandardTransform(min_dim=min_dim, square=square)]
+
         self.aug_multiplicity = aug_multiplicity
-        self._transform = []
         for k_aug_transform in range(self.aug_multiplicity):
-            self._transform.append(img_transforms.DataAugmentTransform(augmentation_label=aug_label, min_dim=min_dim))
+            self._transform.append(img_transforms.DataAugmentTransform(augmentation_label=aug_label,
+                                                                       min_dim=min_dim, square=square))
 
     def __len__(self):
         return self._core.__len__() * self.aug_multiplicity
 
     def __getitem__(self, idx):
-        idx_fungi = int(np.floor(idx / self.aug_multiplicity))
-        idx_aug_transform = idx % self.aug_multiplicity
+        idx_fungi = int(np.floor(idx / (1 + self.aug_multiplicity)))
+        idx_aug_transform = idx % (1 + self.aug_multiplicity)
         raw_out = self._core[idx_fungi]
         image = self._transform[idx_aug_transform](raw_out['image'])
         label = raw_out['label']
@@ -412,9 +415,10 @@ class FungiFullAugLabelledDataBuilder(object):
         self._instance = None
 
     def __call__(self, csv_file, img_root_dir, label_keys, aug_multiplicity, aug_label,
-                 selector=None, iselector=None, **_ignored):
+                 min_dim=224, square=False, selector=None, iselector=None, **_ignored):
         self._instance = FungiFullAugLabelledData(csv_file=csv_file, img_root_dir=img_root_dir,
                                                   label_keys=label_keys,
+                                                  min_dim=min_dim, square=square,
                                                   aug_multiplicity=aug_multiplicity,
                                                   aug_label=aug_label,
                                                   selector=selector, iselector=iselector)

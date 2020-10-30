@@ -63,7 +63,7 @@ class _Learner(LearnerInterface):
         To be written
 
     '''
-    STATE_KEY_SAVE = 'ae_model_state'
+    STATE_KEY_SAVE = 'model_state'
 
     def __init__(self, run_label='', random_seed=None, f_out=sys.stdout,
                        raw_csv_toc=None, raw_csv_root=None,
@@ -214,7 +214,6 @@ class _Learner(LearnerInterface):
 
             self.save_model(self.inp_save_tmp_name)
             self.inp_epoch_conclude_func()
-            print ('\n', file=self.inp_f_out)
 
     def _test(self, dloader=None):
         '''Run a test evaluation of the model, hence no optimization

@@ -27,11 +27,11 @@ class ICLearner(_Learner):
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
                        ic_model='vgg',
-                       label_keys=None, min_dim=224,
-                       aug_multiplicity=2, aug_label='random_resized_crop_rotation',
+                       label_keys=None, min_dim=224, square=False,
+                       aug_multiplicity=1, aug_label='random_resized_crop_rotation',
                        test_dataloader=None):
 
-        dataset_kwargs = {'label_keys': label_keys, 'min_dim': min_dim,
+        dataset_kwargs = {'label_keys': label_keys, 'min_dim': min_dim, 'square': square,
                           'aug_multiplicity': aug_multiplicity, 'aug_label': aug_label}
 
         super(ICLearner, self).__init__(run_label=run_label, random_seed=random_seed, f_out=f_out,
@@ -97,10 +97,14 @@ class ICLearner(_Learner):
 
         '''
         if self.inp_ic_model == 'inception_v3':
-            output, aux_output = self.model(image)
-            loss1 = self.criterion(output, label)
-            loss2 = self.criterion(aux_output, label)
-            loss = loss1 + 0.4 * loss2
+            if self.model.training:
+                output, aux_output = self.model(image)
+                loss1 = self.criterion(output, label)
+                loss2 = self.criterion(aux_output, label)
+                loss = loss1 + 0.4 * loss2
+            else:
+                output = self.model(image)
+                loss = self.criterion(output, label)
 
         else:
             output = self.model(image)
@@ -113,4 +117,4 @@ class ICLearner(_Learner):
 
         '''
         test_loss = self._test(self.inp_test_dataloader)
-        print ('Test Loss: {:.4f}\n'.format(test_loss), file=self.inp_f_out)
+        print ('Test Loss: {:.4f}'.format(test_loss), file=self.inp_f_out)

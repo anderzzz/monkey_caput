@@ -78,10 +78,13 @@ class DataAugmentTransform(object):
         norm_std : std value for normalization of the R,G,B channels
 
     '''
-    def __init__(self, augmentation_label, min_dim=300, to_tensor=True,
+    def __init__(self, augmentation_label, min_dim=300, to_tensor=True, square=False,
                  normalize=True, norm_mean=ZScoreConsts.Z_MEAN.value, norm_std=ZScoreConsts.Z_STD.value):
 
         ts = [transforms.ToPILImage(), transforms.Resize(min_dim)]
+        if square:
+            ts.append(transforms.CenterCrop(min_dim))
+
         if augmentation_label == 'random_resized_crop':
             ts.append(transforms.RandomResizedCrop((min_dim, int(min_dim * 1.5)), scale=(0.67,1.0)))
         elif augmentation_label == 'random_rotation':
