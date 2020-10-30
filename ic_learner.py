@@ -27,7 +27,8 @@ class ICLearner(_Learner):
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
                        ic_model='vgg',
-                       label_keys=None, min_dim=224):
+                       label_keys=None, min_dim=224,
+                       test_dataloader=None):
 
         dataset_kwargs = {'label_keys': label_keys, 'min_dim': min_dim}
         super(ICLearner, self).__init__(run_label=run_label, random_seed=random_seed, f_out=f_out,
@@ -37,7 +38,8 @@ class ICLearner(_Learner):
                                         dataset_type=dataset_type, dataset_kwargs=dataset_kwargs,
                                         loader_batch_size=loader_batch_size, num_workers=num_workers,
                                         show_batch_progress=show_batch_progress,
-                                        deterministic=deterministic)
+                                        deterministic=deterministic,
+                                        epoch_conclude_func=self.test_loss)
 
         self.inp_lr_init = lr_init
         self.inp_momentum = momentum
@@ -45,7 +47,8 @@ class ICLearner(_Learner):
         self.inp_scheduler_gamma = scheduler_gamma
         self.inp_ic_model = ic_model
         self.inp_label_keys = label_keys
-        self.inp_min_dim = 224
+        self.inp_min_dim = min_dim
+        self.inp_test_dataloader = test_dataloader
 
         self.model, min_size = initialize_model(self.inp_ic_model, len(label_keys))
         self.criterion = nn.CrossEntropyLoss()
@@ -90,10 +93,21 @@ class ICLearner(_Learner):
         '''Method to compute the loss of a model given an input.
 
         '''
-        print (image.shape)
-        print (label.shape)
-        output = self.model(image)
-        print (output.shape)
-        raise RuntimeError
-        loss = self.criterion(output, label)
+        if self.inp_ic_model == 'inception_v3':
+            output, aux_output = self.model(image)
+            loss1 = self.criterion(output, label)
+            loss2 = self.criterion(aux_output, label)
+            loss = loss1 + 0.4 * loss2
+
+        else:
+            output = self.model(image)
+            loss = self.criterion(output, label)
+
         return loss
+
+    def test_loss(self):
+        '''Compute loss on a separate test set
+
+        '''
+        test_loss = self._test(self.inp_test_dataloader)
+        print ('Test Loss: {:.4f}\n'.format(test_loss), file=self.inp_f_out)

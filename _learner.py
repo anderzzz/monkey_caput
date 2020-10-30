@@ -71,7 +71,8 @@ class _Learner(LearnerInterface):
                        selector=None, iselector=None,
                        dataset_type='full basic', dataset_kwargs={},
                        loader_batch_size=16, num_workers=0,
-                       show_batch_progress=True, deterministic=True):
+                       show_batch_progress=True, deterministic=True,
+                       epoch_conclude_func=None):
 
         self.inp_run_label = run_label
         self.inp_random_seed = random_seed
@@ -86,6 +87,10 @@ class _Learner(LearnerInterface):
         self.inp_num_workers = num_workers
         self.inp_show_batch_progress = show_batch_progress
         self.inp_deterministic = deterministic
+        if epoch_conclude_func is None:
+            self.inp_epoch_conclude_func = lambda: None
+        else:
+            self.inp_epoch_conclude_func = epoch_conclude_func
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -176,14 +181,11 @@ class _Learner(LearnerInterface):
         '''
         self._check_override()
 
-        best_model_wts = copy.deepcopy(self.model.state_dict())
-        best_err = 1e20
-        self.model.train()
-
         for epoch in range(n_epochs):
             print('Epoch {}/{}...'.format(epoch, n_epochs - 1), file=self.inp_f_out)
+            self.model.train()
 
-            running_err = 0.0
+            running_loss = 0.0
             n_instances = 0
             for inputs in self.dataloader:
                 size_batch = inputs[self.dataset.returnkey.image].size(0)
@@ -201,23 +203,47 @@ class _Learner(LearnerInterface):
                 self.lr_scheduler.step()
 
                 # Update aggregates and reporting
-                running_err += loss.item() * size_batch
+                running_loss += loss.item() * size_batch
                 if self.inp_show_batch_progress:
                     n_instances += size_batch
                     progress_bar(n_instances, self.dataset_size)
 
-            running_err = running_err / self.dataset_size
-            print('Error: {:.4f}\n'.format(running_err), file=self.inp_f_out)
-            #print('', file=self.inp_f_out)
+            running_loss = running_loss / self.dataset_size
+            print('Loss: {:.4f}\n'.format(running_loss), file=self.inp_f_out)
 
-            if running_err < best_err:
-                best_model_wts = copy.deepcopy(self.model.state_dict())
-                self.save_model(self.inp_save_tmp_name)
+            self.save_model(self.inp_save_tmp_name)
+            self.inp_epoch_conclude_func()
 
-        # load best model weights
-        self.model.load_state_dict(best_model_wts)
+    def _test(self, dloader=None):
+        '''Run a test evaluation of the model, hence no optimization
 
-    def _eval_model(self, dloader=None):
+        Args:
+            dloader (optional): DataLoader for the DataSet. Defaults to `None` which leads to that the evaluation is
+                done over the data sequence defined during initialization and used by `_train`.
+
+        Returns:
+            test_loss (float): The average loss on the data set
+
+        '''
+        self.model.eval()
+        self._check_override(model_only=True)
+        if dloader is None:
+            dloader = self.dataloader
+
+        running_loss = 0.0
+        for inputs in dloader:
+            size_batch = inputs[self.dataset.returnkey.image].size(0)
+            inputs[self.dataset.returnkey.image] = inputs[self.dataset.returnkey.image].to(self.device)
+
+            # Compute loss and update aggregate
+            loss = self.compute_loss(**inputs)
+            running_loss += loss.item() * size_batch
+
+        running_loss = running_loss / self.dataset_size
+
+        return running_loss
+
+    def evaluator(self, dloader=None):
         '''Generator to evaluate current model for a data collection
 
         Args:
@@ -229,12 +255,11 @@ class _Learner(LearnerInterface):
                 the output as provided by the model defined in child class.
 
         '''
+        self.model.eval()
         self._check_override(model_only=True)
-
         if dloader is None:
             dloader = self.dataloader
 
-        self.model.eval()
         for inputs in dloader:
             img_inputs = inputs[self.dataset.getkeys.image]
             img_inputs = img_inputs.to(self.device)
