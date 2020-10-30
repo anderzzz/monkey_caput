@@ -1,4 +1,4 @@
-'''Fungi Image Dataset classes, including image transformations
+'''Fungi Image Dataset classes and factory methods for their creation
 
 Written By: Anders Ohrn, September 2020
 
@@ -128,7 +128,7 @@ class FungiFullAugLabelledData(Dataset):
           returnkey : Keys to access values of return dictionary for __getitem__
 
     '''
-    def __init__(self, csv_file, img_root_dir, label_keys, aug_multiplicity, selector=None, iselector=None):
+    def __init__(self, csv_file, img_root_dir, label_keys, aug_multiplicity, aug_label, min_dim=224, selector=None, iselector=None):
         super(FungiFullAugLabelledData, self).__init__()
 
         self._core = _FungiDataCore(csv_file, img_root_dir, selector=selector, iselector=iselector,
@@ -140,7 +140,7 @@ class FungiFullAugLabelledData(Dataset):
         self.aug_multiplicity = aug_multiplicity
         self._transform = []
         for k_aug_transform in range(self.aug_multiplicity):
-            self._transform.append(img_transforms.DataAugmentTransform())
+            self._transform.append(img_transforms.DataAugmentTransform(augmentation_label=aug_label, min_dim=min_dim))
 
     def __len__(self):
         return self._core.__len__() * self.aug_multiplicity
@@ -382,8 +382,10 @@ class _FungiDataCore(object):
 
 
 #
-# Various Fungi Dataset builders. Used by the factory function `factory`, see below.
+# Various Fungi Dataset builders, which instantiate a Fungi Dataset. The builders are used by the factory
+# function `factory`, see below.
 #
+
 class FungiFullBasicDataBuilder(object):
     def __init__(self):
         self._instance = None
@@ -409,11 +411,12 @@ class FungiFullAugLabelledDataBuilder(object):
     def __init__(self):
         self._instance = None
 
-    def __call__(self, csv_file, img_root_dir, label_keys, aug_multiplicity,
+    def __call__(self, csv_file, img_root_dir, label_keys, aug_multiplicity, aug_label,
                  selector=None, iselector=None, **_ignored):
         self._instance = FungiFullAugLabelledData(csv_file=csv_file, img_root_dir=img_root_dir,
                                                   label_keys=label_keys,
                                                   aug_multiplicity=aug_multiplicity,
+                                                  aug_label=aug_label,
                                                   selector=selector, iselector=iselector)
         return self._instance
 
@@ -453,19 +456,41 @@ class FungiGridBasicIdxDataBuilder(object):
         return self._instance
 
 class FungiDataFactory(object):
-    '''Generic interface to fungi data factories
+    '''Interface to fungi data factories.
+
+    Typical usage involves the invocation of the `create` method, which returns a specific Fungi dataset.
 
     '''
     def __init__(self):
         self._builders = {}
 
     def register_builder(self, key, builder):
+        '''Register a builder
+
+        Args:
+            key (str): Key to the builder, which can be invoked by `create` method
+            builder: A Fungi Data Builder instance
+
+        '''
         self._builders[key] = builder
 
+    @property
     def keys(self):
         return self._builders.keys()
 
     def create(self, key, csv_file, img_root_dir, selector=None, iselector=None, **kwargs):
+        '''Method to create a fungi data set through a uniform interface
+
+        Args:
+            key (str): The name of the type of dataset to create. The available keys available in attribute `keys`
+            csv_file (str): CSV file with table-of-contents of the fungi raw data
+            img_root_dir (str): Path to the root directory of fungi images
+            selector (optional): Pandas IndexSlice or callable that is passed to the Pandas `.loc` method in
+                order to select a subset of images on basis of MultiIndex values. Defaults to None.
+            iselector (optional): Colletion of integer indices or callable that is passed to the Pandas `.iloc`
+                method in order to select a subset of images. This is applied after any `selector` filtering.
+            **kwargs: Additional arguments to be passed to the specific dataset builder.
+        '''
         try:
             builder = self._builders[key]
         except KeyError:
@@ -473,6 +498,8 @@ class FungiDataFactory(object):
         return builder(csv_file=csv_file, img_root_dir=img_root_dir, selector=selector, iselector=iselector,
                        **kwargs)
 
+# The available pre-registrered fungi data set factory method. It can be imported and the `create` method has a
+# uniform interface for the creation of one of many possible variants of a fungi data set.
 factory = FungiDataFactory()
 factory.register_builder('full basic', FungiFullBasicDataBuilder())
 factory.register_builder('full basic labelled', FungiFullBasicLabelledDataBuilder())

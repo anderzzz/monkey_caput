@@ -83,6 +83,7 @@ class _Learner(LearnerInterface):
         self.inp_selector = selector
         self.inp_iselector = iselector
         self.inp_dataset_type = dataset_type
+        self.inp_dataset_kwargs = dataset_kwargs
         self.inp_loader_batch_size = loader_batch_size
         self.inp_num_workers = num_workers
         self.inp_show_batch_progress = show_batch_progress
@@ -103,7 +104,7 @@ class _Learner(LearnerInterface):
         # Define the dataset and method to load it during training
         self.dataset = fungidata.factory.create(self.inp_dataset_type, raw_csv_toc, raw_csv_root,
                                                 selector=selector, iselector=iselector,
-                                                **dataset_kwargs)
+                                                **self.inp_dataset_kwargs)
         self.dataset_size = len(self.dataset)
         self.dataloader = DataLoader(self.dataset,
                                      batch_size=self.inp_loader_batch_size,
@@ -209,10 +210,11 @@ class _Learner(LearnerInterface):
                     progress_bar(n_instances, self.dataset_size)
 
             running_loss = running_loss / self.dataset_size
-            print('Loss: {:.4f}\n'.format(running_loss), file=self.inp_f_out)
+            print('\nLoss: {:.4f}'.format(running_loss), file=self.inp_f_out)
 
             self.save_model(self.inp_save_tmp_name)
             self.inp_epoch_conclude_func()
+            print ('\n', file=self.inp_f_out)
 
     def _test(self, dloader=None):
         '''Run a test evaluation of the model, hence no optimization

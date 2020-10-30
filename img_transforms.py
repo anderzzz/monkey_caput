@@ -1,4 +1,6 @@
-'''Bla bla
+'''Image data transforms that can be applied after reading of raw data, before the application of the model
+
+Written By: Anders Ohrn, October 2020
 
 '''
 from enum import Enum
@@ -84,6 +86,9 @@ class DataAugmentTransform(object):
             ts.append(transforms.RandomResizedCrop((min_dim, int(min_dim * 1.5)), scale=(0.67,1.0)))
         elif augmentation_label == 'random_rotation':
             ts.append(transforms.RandomRotation(180.0))
+        elif augmentation_label == 'random_resized_crop_rotation':
+            ts.append(transforms.RandomResizedCrop((min_dim, int(min_dim * 1.5)), scale=(0.67, 1.0)))
+            ts.append(transforms.RandomRotation(180.0))
         else:
             raise ValueError('Unknown augmentation label: {}'.format(augmentation_label))
 
@@ -95,6 +100,7 @@ class DataAugmentTransform(object):
 
     def __call__(self, img):
         return self.transform_total(img)
+
 
 class OverlapGridTransform(object):
     '''Transformer of image to multiple image slices on a grid. The images slices can be overlapping.

@@ -22,12 +22,16 @@ class AELearner(_Learner):
                        raw_csv_toc=None, raw_csv_root=None,
                        save_tmp_name='model_in_training',
                        selector=None, iselector=None,
-                       dataset_type='full basic', dataset_kwargs={},
+                       dataset_type='full basic',
                        loader_batch_size=16, num_workers=0,
                        show_batch_progress=True, deterministic=True,
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
-                       freeze_encoder=False):
+                       freeze_encoder=False,
+                       img_input_dim=224, img_n_splits=6, crop_step_size=32, crop_dim=64):
+
+        dataset_kwargs = {'img_input_dim': img_input_dim, 'img_n_splits': img_n_splits,
+                          'crop_step_size': crop_step_size, 'crop_dim': crop_dim}
 
         super(AELearner, self).__init__(run_label=run_label, random_seed=random_seed, f_out=f_out,
                                         raw_csv_toc=raw_csv_toc, raw_csv_root=raw_csv_root,

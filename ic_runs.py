@@ -31,9 +31,23 @@ learner_1 = ICLearner(run_label='simple classification test run',
                       lr_init=0.01,
                       random_seed=79, test_dataloader=dataloader_test)
 
+learner_2 = ICLearner(run_label='simple classification test run with data augmentation',
+                      raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
+                      loader_batch_size=64,
+                      selector=tt, iselector=vv,
+                      label_keys=label_binary_cf,
+                      dataset_type='full aug labelled',
+                      lr_init=0.01,
+                      random_seed=79, test_dataloader=dataloader_test)
+
 def train_simple_ic():
     learner_1.train(2)
     learner_1.save_model('ic_run_1')
 
+def train_aug_ic():
+    learner_2.train(2)
+    learner_2.save_model('ic_run_2')
+
 if __name__ == '__main__':
     train_simple_ic()
+    train_aug_ic()

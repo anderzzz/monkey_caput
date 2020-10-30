@@ -28,9 +28,12 @@ class ICLearner(_Learner):
                        scheduler_step_size=15, scheduler_gamma=0.1,
                        ic_model='vgg',
                        label_keys=None, min_dim=224,
+                       aug_multiplicity=2, aug_label='random_resized_crop_rotation',
                        test_dataloader=None):
 
-        dataset_kwargs = {'label_keys': label_keys, 'min_dim': min_dim}
+        dataset_kwargs = {'label_keys': label_keys, 'min_dim': min_dim,
+                          'aug_multiplicity': aug_multiplicity, 'aug_label': aug_label}
+
         super(ICLearner, self).__init__(run_label=run_label, random_seed=random_seed, f_out=f_out,
                                         raw_csv_toc=raw_csv_toc, raw_csv_root=raw_csv_root,
                                         save_tmp_name=save_tmp_name,
