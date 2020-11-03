@@ -105,7 +105,7 @@ class DecoderVGG(nn.Module):
     The decoder is created from a pseudo-inversion of the encoder based on VGG-16 with batch normalization. The
     pesudo-inversion is obtained by (1) replacing max pooling layers in the encoder with max un-pooling layers with
     pooling indices from the mirror image max pooling layer, and by (2) replacing 2D convolutions with transposed
-    2D convolutions. The ReLU and bathc normalization layers are the same as in the encoder, that is subsequent to
+    2D convolutions. The ReLU and batch normalization layers are the same as in the encoder, that is subsequent to
     the convolution layer.
 
     Args:

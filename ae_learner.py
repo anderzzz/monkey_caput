@@ -8,7 +8,7 @@ import sys
 import torch
 from torch import nn
 
-from _learner import _Learner
+from _learner import _Learner, progress_bar
 from ae_deep import AutoEncoderVGG
 
 class AELearner(_Learner):
@@ -91,26 +91,40 @@ class AELearner(_Learner):
             n_epochs (int): Number of epochs to train the model for
 
         '''
-        self._train(n_epochs=n_epochs)
+        self.model.train()
+        for epoch in range(n_epochs):
+            print('Epoch {}/{}...'.format(epoch, n_epochs - 1), file=self.inp_f_out)
 
-    def compute_loss(self, image):
-        '''Method to compute the loss of a model given an input.
+            running_loss = 0.0
+            n_instances = 0
+            for inputs in self.dataloader:
+                size_batch = inputs[self.dataset.returnkey.image].size(0)
+                image = inputs[self.dataset.returnkey.image].to(self.device)
 
-        The argument to this method has to be named as the corresponding output from the Dataset. The name of the
-        items obtained from the Dataset are available in the attributes of `self.dataset.returnkey`
+                # zero the parameter gradients
+                self.optimizer.zero_grad()
 
-        Args:
-            image (PyTorch Tensor): the batch of images to compute loss for
+                # Compute loss
+                output = self.model(image)
+                loss = self.criterion(output, image)
 
-        Returns:
-            loss: The auto-encoding loss, given input
+                # Back-propagate and optimize
+                loss.backward()
+                self.optimizer.step()
+                self.lr_scheduler.step()
 
-        '''
-        outputs = self.model(image)
-        loss = self.criterion(outputs, image)
-        return loss
+                # Update aggregates and reporting
+                running_loss += loss.item() * size_batch
+                if self.inp_show_batch_progress:
+                    n_instances += size_batch
+                    progress_bar(n_instances, self.dataset_size)
 
-    def eval_model(self, dloader=None, untransform=None):
+            running_loss = running_loss / self.dataset_size
+            print('\nLoss: {:.4f}'.format(running_loss), file=self.inp_f_out)
+
+            self.save_model(self.inp_save_tmp_name)
+
+    def eval(self, dloader=None, untransform=None):
         '''Generator to evaluate the Auto-encoder for a selection of images
 
         Args:
@@ -123,9 +137,15 @@ class AELearner(_Learner):
             img_batch (PyTorch Tensor): batch of images following evaluation
 
         '''
-        for model_output in self._eval_model(dloader):
-            ret_batch = []
-            for img in model_output:
+        self.model.eval()
+        if not dloader is None:
+            dloader = self.dataloader
+
+        ret_batch = []
+        for inputs in dloader:
+            inputs[self.dataset.returnkey.image] = inputs[self.dataset.returnkey.image].to(self.device)
+            output = self.model(inputs)
+            for img in output:
                 img = img.detach()
                 if not untransform is None:
                     img = untransform(img)

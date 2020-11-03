@@ -7,7 +7,7 @@ import sys
 import torch
 from torch import nn
 
-from _learner import _Learner
+from _learner import _Learner, progress_bar
 from ic_template_models import initialize_model
 
 class ICLearner(_Learner):
@@ -29,7 +29,7 @@ class ICLearner(_Learner):
                        ic_model='vgg',
                        label_keys=None, min_dim=224, square=False,
                        aug_multiplicity=1, aug_label='random_resized_crop_rotation',
-                       test_dataloader=None):
+                       test_dataloader=None, test_datasetsize=None):
 
         dataset_kwargs = {'label_keys': label_keys, 'min_dim': min_dim, 'square': square,
                           'aug_multiplicity': aug_multiplicity, 'aug_label': aug_label}
@@ -41,8 +41,7 @@ class ICLearner(_Learner):
                                         dataset_type=dataset_type, dataset_kwargs=dataset_kwargs,
                                         loader_batch_size=loader_batch_size, num_workers=num_workers,
                                         show_batch_progress=show_batch_progress,
-                                        deterministic=deterministic,
-                                        epoch_conclude_func=self.test_loss)
+                                        deterministic=deterministic)
 
         self.inp_lr_init = lr_init
         self.inp_momentum = momentum
@@ -52,6 +51,7 @@ class ICLearner(_Learner):
         self.inp_label_keys = label_keys
         self.inp_min_dim = min_dim
         self.inp_test_dataloader = test_dataloader
+        self.inp_test_datasetsize = test_datasetsize
 
         self.model, min_size = initialize_model(self.inp_ic_model, len(label_keys))
         self.criterion = nn.CrossEntropyLoss()
@@ -90,9 +90,71 @@ class ICLearner(_Learner):
             n_epochs (int): Number of epochs to train the model for
 
         '''
-        self._train(n_epochs=n_epochs)
+        for epoch in range(n_epochs):
+            print('Epoch {}/{}...'.format(epoch, n_epochs - 1), file=self.inp_f_out)
 
-    def compute_loss(self, image, label):
+            self.model.train()
+            running_loss = 0.0
+            running_correct = 0
+            n_instances = 0
+            for inputs in self.dataloader:
+                size_batch = inputs[self.dataset.returnkey.image].size(0)
+                image = inputs[self.dataset.returnkey.image].to(self.device)
+                label = inputs[self.dataset.returnkey.label]
+
+                # zero the parameter gradients
+                self.optimizer.zero_grad()
+
+                # Compute loss
+                loss, pred = self.eval(image, label)
+
+                # Back-propagate and optimize
+                loss.backward()
+                self.optimizer.step()
+                self.lr_scheduler.step()
+
+                # Update aggregates and reporting
+                running_loss += loss.item() * size_batch
+                running_correct += torch.sum(pred == label.data)
+                if self.inp_show_batch_progress:
+                    n_instances += size_batch
+                    progress_bar(n_instances, self.dataset_size)
+
+            running_loss = running_loss / float(self.dataset_size)
+            running_correct = running_correct / float(self.dataset_size)
+            print('\nTrain Loss: {:.4f}'.format(running_loss), file=self.inp_f_out)
+            print('\nTrain Accuracy: {:.4f}'.format(running_correct), file=self.inp_f_out)
+
+            self.save_model(self.inp_save_tmp_name)
+
+            self.model.eval()
+            running_loss = 0.0
+            running_correct = 0
+            n_instances = 0
+            for inputs in self.inp_test_dataloader:
+                size_batch = inputs[self.dataset.returnkey.image].size(0)
+                image = inputs[self.dataset.returnkey.image].to(self.device)
+                label = inputs[self.dataset.returnkey.label]
+
+                # Compute loss
+                loss, pred = self.eval(image, label)
+
+                # Update aggregates and reporting
+                running_loss += loss.item() * size_batch
+                running_correct += torch.sum(pred == label.data)
+                print (running_correct)
+                if self.inp_show_batch_progress:
+                    n_instances += size_batch
+                    progress_bar(n_instances, self.inp_test_datasetsize)
+
+            running_loss = running_loss / float(self.inp_test_datasetsize)
+            running_correct = running_correct / float(self.inp_test_datasetsize)
+            print (running_correct)
+            print('\nTest Loss: {:.4f}'.format(running_loss), file=self.inp_f_out)
+            print('\nTest Accuracy: {:.4f}'.format(running_correct), file=self.inp_f_out)
+            raise RuntimeError
+
+    def eval(self, image, label):
         '''Method to compute the loss of a model given an input.
 
         '''
@@ -110,11 +172,13 @@ class ICLearner(_Learner):
             output = self.model(image)
             loss = self.criterion(output, label)
 
-        return loss
+        _, pred = torch.max(output, 1)
 
-    def test_loss(self):
-        '''Compute loss on a separate test set
+        return loss, pred
+
+    def _running_corrects(self, output, label):
+        '''Bla bla
 
         '''
-        test_loss = self._test(self.inp_test_dataloader)
-        print ('Test Loss: {:.4f}'.format(test_loss), file=self.inp_f_out)
+        _, pred = torch.max(output, 1)
+        return torch.sum(pred == label.data)

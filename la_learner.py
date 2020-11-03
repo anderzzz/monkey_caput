@@ -8,7 +8,7 @@ import numpy as np
 
 import torch
 
-from _learner import _Learner
+from _learner import _Learner, progress_bar
 from cluster_utils import MemoryBank, LocalAggregationLoss
 from ae_deep import EncoderVGGMerged, AutoEncoderVGG
 
@@ -106,25 +106,40 @@ class LALearner(_Learner):
             n_epochs (int): Number of epochs to train the model for
 
         '''
-        self._train(n_epochs=n_epochs)
+        self.model.train()
+        for epoch in range(n_epochs):
+            print('Epoch {}/{}...'.format(epoch, n_epochs - 1), file=self.inp_f_out)
 
-    def compute_loss(self, image, idx):
-        '''Method to compute the loss of a model given an input.
+            running_loss = 0.0
+            n_instances = 0
+            for inputs in self.dataloader:
+                size_batch = inputs[self.dataset.returnkey.image].size(0)
+                image = inputs[self.dataset.returnkey.image].to(self.device)
+                idx = inputs[self.dataset.returnkey.idx].detach().numpy()
 
-        The argument to this method has to be named as the corresponding output from the Dataset. The name of the
-        items obtained from the Dataset are available in the attributes of `self.dataset.returnkey`
+                # zero the parameter gradients
+                self.optimizer.zero_grad()
 
-        Args:
-            image (PyTorch Tensor): the batch of images to compute loss for
-            idx (PyTorch Tensor): the batch of dataset indices the batch of images corresponds to
+                # Compute loss
+                output = self.model(image)
+                loss = self.criterion(output, idx)
 
-        Returns:
-            loss: The local aggregation loss, given input
+                # Back-propagate and optimize
+                loss.backward()
+                self.optimizer.step()
+                self.lr_scheduler.step()
 
-        '''
-        outputs = self.model(image)
-        loss = self.criterion(outputs, idx.detach().numpy())
-        return loss
+                # Update aggregates and reporting
+                running_loss += loss.item() * size_batch
+                if self.inp_show_batch_progress:
+                    n_instances += size_batch
+                    progress_bar(n_instances, self.dataset_size)
+
+            running_loss = running_loss / self.dataset_size
+            print('\nLoss: {:.4f}'.format(running_loss), file=self.inp_f_out)
+
+            self.save_model(self.inp_save_tmp_name)
+
 
     def eval(self, clusterer, clusterer_kwargs={}, dloader=None):
         '''Evaluate cluster properties for the data provided by data loader
@@ -141,12 +156,18 @@ class LALearner(_Learner):
             cluster_labels: The output of `clusterer` applied to the codes
 
         '''
+        self.model.eval()
+        if not dloader is None:
+            dloader = self.dataloader
+
         all_output = None
-        for model_output in self._eval_model(dloader):
+        for inputs in dloader:
+            image = inputs[self.dataset.returnkey.image].to(self.device)
+            output = self.model(image)
             if all_output is None:
-                all_output = model_output.detach().numpy()
+                all_output = output.detach().numpy()
             else:
-                all_output = np.append(all_output, model_output.detach().numpy(), axis=0)
+                all_output = np.append(all_output, output.detach().numpy(), axis=0)
 
         return clusterer(all_output, **clusterer_kwargs)
 

@@ -27,10 +27,10 @@ class LearnerInterface(metaclass=abc.ABCMeta):
     def __subclasshook__(cls, subclass):
         return (hasattr(subclass, 'train') and
                 callable(subclass.train) and
+                hasattr(subclass, 'eval') and
+                callable(subclass.eval) and
                 hasattr(subclass, 'save_model') and
                 callable(subclass.save_model) and
-                hasattr(subclass, 'compute_loss') and
-                callable(subclass.compute_loss) and
                 hasattr(subclass, 'load_model') and
                 callable(subclass.load_model))
 
@@ -40,8 +40,8 @@ class LearnerInterface(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def compute_loss(self, **kwargs):
-        '''Compute loss of model for image input'''
+    def eval(self):
+        '''Evaluate model'''
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -108,11 +108,10 @@ class _Learner(LearnerInterface):
         self.dataset_size = len(self.dataset)
         self.dataloader = DataLoader(self.dataset,
                                      batch_size=self.inp_loader_batch_size,
-                                     shuffle=not self.inp_deterministic,
+                                     shuffle=True,
                                      num_workers=self.inp_num_workers)
 
         # Create the model, optimizer and lr_scheduler attributes, which must be overridden in child class
-        self.model = None
         self.optimizer = None
         self.lr_scheduler = None
 
@@ -150,123 +149,6 @@ class _Learner(LearnerInterface):
             if 'inp_' == attr_name[0:4]:
                 key = attr_name[4:]
                 print('{} : {}'.format(key, attr_value), file=self.inp_f_out)
-
-    def _check_override(self, model_only=False):
-        '''Check that key attributes have been defined in subclasses prior to any execution
-
-        Args:
-            model_only (bool, optional): If only model attribute should be checked. Defaults to False
-
-        Raises:
-            TypeError: If any key attribute not properly overridden
-
-        '''
-        if not isinstance(self.model, torch.nn.Module):
-            raise TypeError('Attribute "model" of {} must be a subclass of the PyTorch Module (torch.nn.Module)'.format(self))
-
-        if not model_only:
-            if not isinstance(self.optimizer, torch.optim.Optimizer):
-                raise TypeError('Attribute "optimizer" of {} must be a subclass of the PyTorch Optimizer (torch.optim.Optimizer)'.format(self))
-            if self.lr_scheduler is None or (not callable(self.lr_scheduler.step)):
-                raise TypeError('Attribute "lr_scheduler" of {} must be a learning rate scheduler of PyTorch (torch.optim.lr_scheduler)'.format(self))
-
-    def _train(self, n_epochs):
-        '''Train the model a set number of epochs.
-
-        The training saves currently best performing models to a temporary file output defined by `save_tmp_name`
-        at initialization. The training utilizes class methods defined in child classes.
-
-        Args:
-            n_epochs (int): Number of epochs to train the model for.
-
-        '''
-        self._check_override()
-
-        for epoch in range(n_epochs):
-            print('Epoch {}/{}...'.format(epoch, n_epochs - 1), file=self.inp_f_out)
-            self.model.train()
-
-            running_loss = 0.0
-            n_instances = 0
-            for inputs in self.dataloader:
-                size_batch = inputs[self.dataset.returnkey.image].size(0)
-                inputs[self.dataset.returnkey.image] = inputs[self.dataset.returnkey.image].to(self.device)
-
-                # zero the parameter gradients
-                self.optimizer.zero_grad()
-
-                # Compute loss
-                loss = self.compute_loss(**inputs)
-
-                # Back-propagate and optimize
-                loss.backward()
-                self.optimizer.step()
-                self.lr_scheduler.step()
-
-                # Update aggregates and reporting
-                running_loss += loss.item() * size_batch
-                if self.inp_show_batch_progress:
-                    n_instances += size_batch
-                    progress_bar(n_instances, self.dataset_size)
-
-            running_loss = running_loss / self.dataset_size
-            print('\nLoss: {:.4f}'.format(running_loss), file=self.inp_f_out)
-
-            self.save_model(self.inp_save_tmp_name)
-            self.inp_epoch_conclude_func()
-
-    def _test(self, dloader=None):
-        '''Run a test evaluation of the model, hence no optimization
-
-        Args:
-            dloader (optional): DataLoader for the DataSet. Defaults to `None` which leads to that the evaluation is
-                done over the data sequence defined during initialization and used by `_train`.
-
-        Returns:
-            test_loss (float): The average loss on the data set
-
-        '''
-        self.model.eval()
-        self._check_override(model_only=True)
-        if dloader is None:
-            dloader = self.dataloader
-
-        running_loss = 0.0
-        for inputs in dloader:
-            size_batch = inputs[self.dataset.returnkey.image].size(0)
-            inputs[self.dataset.returnkey.image] = inputs[self.dataset.returnkey.image].to(self.device)
-
-            # Compute loss and update aggregate
-            loss = self.compute_loss(**inputs)
-            running_loss += loss.item() * size_batch
-
-        running_loss = running_loss / self.dataset_size
-
-        return running_loss
-
-    def evaluator(self, dloader=None):
-        '''Generator to evaluate current model for a data collection
-
-        Args:
-            dloader (optional): DataLoader for the DataSet. Defaults to `None` which leads to that the evaluation is
-                done over the data sequence defined during initialization and used by `_train`.
-
-        Yields:
-            outputs (PyTorch Tensor): A batch of output tensors of the model, batch defined by the `dloader`, and
-                the output as provided by the model defined in child class.
-
-        '''
-        self.model.eval()
-        self._check_override(model_only=True)
-        if dloader is None:
-            dloader = self.dataloader
-
-        for inputs in dloader:
-            img_inputs = inputs[self.dataset.getkeys.image]
-            img_inputs = img_inputs.to(self.device)
-
-            yield self.model(img_inputs)
-
 
 def progress_bar(current, total, barlength=20):
     '''Print progress of training of a batch. Helpful in PyCharm'''

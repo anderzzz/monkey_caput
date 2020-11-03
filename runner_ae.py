@@ -10,7 +10,7 @@ import sys
 import time
 import copy
 import numpy as np
-from numpy.random import seed
+from numpy.random import seed, shuffle
 
 import torch
 from torchvision.utils import save_image
@@ -22,7 +22,7 @@ from sklearn.cluster import KMeans
 
 from fungiimg import FungiImg, StandardTransform, UnTransform
 from ae_deep import AutoEncoderVGG
-from cluster_utils import clusterloss
+#from cluster_utils import clusterloss
 
 class _Runner(object):
     '''Parent class for the auto-encoder and clustering runners
@@ -203,7 +203,7 @@ class RunnerCluster(_Runner):
         self.dataloader_clustering = copy.deepcopy(self.dataloader)
 
         # Define criterion and optimizer
-        self.criterion = clusterloss
+#        self.criterion = clusterloss
         self.set_optim(lr=self.inp_lr_init,
                        scheduler_step_size=self.inp_scheduler_step_size,
                        scheduler_gamma=self.inp_scheduler_gamma,
@@ -365,14 +365,23 @@ def test3():
     img_meta, img_filename = r1.dataset.info_on_(0)
 
 def test4():
+    k1 = list(range(757)) + list(range(3322,4992))
+    shuffle(k1)
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
                   loader_batch_size=16,
-                  label_key='Kantarell', lr_init=0.01, scheduler_step_size=20, freeze_encoder=False,
+                  #iselector=k1[:160],
+                  #iselector=[0,7,14,55,56,57,77,99,105,160,170,177,199,215,216,288,
+                  #           1,8,15,655,656,657,100,106,161,171,178,200,515,516,289,
+                  #           3322,3329,3369,3399,3500,3587,3588,3598,3666,3696,3707,3712,3777,3800,3817,3838,
+                  #           3323,3330,3370,4399,4500,4587,4588,4598,4666,4696,4707,4712,4777,4800,4817,4838],
+                  label_key='Kantarell and Fluesvamp', lr_init=0.01, scheduler_step_size=8, scheduler_gamma=0.25,
+                  freeze_encoder=False,
                   random_seed=79)
     r1.print_inp()
-    r1.fetch_model('model_in_progress')
-    r1.train(60)
-    r1.save_model_state('test4')
+    print (r1.dataset_size)
+    r1.fetch_model('test4_plus')
+    r1.train(40)
+    r1.save_model_state('test4_all')
 
 def testX2():
     r1 = RunnerAE(raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',

@@ -251,7 +251,7 @@ class FungiGridBasicIdxData(FungiGridBasicData):
     '''
     def __init__(self, csv_file, img_root_dir, selector=None, iselector=None,
                  img_input_dim=224, img_n_splits=6, crop_step_size=32, crop_dim=64):
-        super(FungiGridBasicData, self).__init__(csv_file, img_root_dir, selector=selector, iselector=iselector,
+        super(FungiGridBasicIdxData, self).__init__(csv_file, img_root_dir, selector=selector, iselector=iselector,
                                                  img_input_dim=img_input_dim, img_n_splits=img_n_splits,
                                                  crop_step_size=crop_step_size, crop_dim=crop_dim)
 
