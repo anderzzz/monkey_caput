@@ -100,9 +100,6 @@ class LocalAggregationLoss(nn.Module):
     '''Local Aggregation Loss module from "Local Aggregation for Unsupervised Learning of Visual Embeddings" by
     Zhuang, Zhai and Yamins (2019), arXiv:1903.12355v2
 
-    Args:
-        temperature (float):
-
     '''
     def __init__(self, temperature,
                  k_nearest_neighbours, clustering_repeats, number_of_centroids,
@@ -259,18 +256,6 @@ class LocalAggregationLoss(nn.Module):
         loss_cluster = torch.sum(torch.log(d1) - torch.log(d2)) / codes.shape[0]
 
         return loss_cluster
-
-
-def test_la():
-    np.random.seed(42)
-    mbank = MemoryBank(8,3,1.0)
-    laloss = LocalAggregationLoss(temperature=2.0, k_nearest_neighbours=5,
-                                  memory_bank=mbank, clustering_repeats=2, number_of_centroids=3)
-    vvv = torch.tensor([[1.0, 0.0, -0.2],
-                        [0.0, -1.0, 4.0],
-                        [0.5,2.0,0.0]], requires_grad=True, dtype=torch.float64)
-    loss = laloss(vvv, np.array([0,2,3]))
-    print (loss)
 
 
 class ClusterHardnessLoss(nn.Module):
