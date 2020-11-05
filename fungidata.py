@@ -49,7 +49,7 @@ class FungiFullBasicData(Dataset):
           returnkey : Keys to access values of return dictionary for __getitem__
 
     '''
-    def __init__(self, csv_file, img_root_dir, selector=None, iselector=None):
+    def __init__(self, csv_file, img_root_dir, selector=None, iselector=None, min_dim=224, square=True):
         super(FungiFullBasicData, self).__init__()
 
         self._core = _FungiDataCore(csv_file, img_root_dir, selector=selector, iselector=iselector)
@@ -57,7 +57,7 @@ class FungiFullBasicData(Dataset):
         self.returnkey = DataGetKeys()
         del self.returnkey.label
         del self.returnkey.idx
-        self._transform = img_transforms.StandardTransform()
+        self._transform = img_transforms.StandardTransform(min_dim=min_dim, square=square)
 
     def __len__(self):
         return self._core.__len__()
@@ -173,7 +173,8 @@ class FungiFullBasicIdxData(FungiFullBasicData):
     '''
     def __init__(self, csv_file, img_root_dir, selector=None, iselector=None):
         super(FungiFullBasicIdxData, self).__init__(csv_file=csv_file, img_root_dir=img_root_dir,
-                                                    selector=selector, iselector=iselector)
+                                                    selector=selector, iselector=iselector,
+                                                    square=True)
 
         self.returnkey = DataGetKeys()
         del self.returnkey.label
@@ -393,9 +394,11 @@ class FungiFullBasicDataBuilder(object):
     def __init__(self):
         self._instance = None
 
-    def __call__(self, csv_file, img_root_dir, selector=None, iselector=None, **_ignored):
+    def __call__(self, csv_file, img_root_dir, selector=None, iselector=None,
+                 img_input_dim=224, square=False, **_ignored):
         self._instance = FungiFullBasicData(csv_file=csv_file, img_root_dir=img_root_dir,
-                                            selector=selector, iselector=iselector)
+                                            selector=selector, iselector=iselector, square=square,
+                                            min_dim=img_input_dim)
         return self._instance
 
 class FungiFullBasicLabelledDataBuilder(object):
