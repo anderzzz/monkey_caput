@@ -45,15 +45,12 @@ class MemoryBank(object):
         self.memory_mixing_rate = memory_mixing_rate
         self.mask_init = np.array([False] * n_vectors)
 
-    def update_memory(self, vectors, index, memory_mixing_rate=None):
+    def update_memory(self, vectors, index):
         '''Update the memory with new vectors
 
         Args:
             vectors (np.ndarray)
         '''
-        if not memory_mixing_rate is None:
-            self.memory_mixing_rate = memory_mixing_rate
-
         if isinstance(index, int):
             self.vectors[index] = self._update_(vectors, self.vectors[index])
 
@@ -88,7 +85,8 @@ class MemoryBank(object):
         return np.array(ret_mask)
 
     def _update_(self, vector_new, vector_recall):
-        return vector_new * self.memory_mixing_rate + vector_recall * (1.0 - self.memory_mixing_rate)
+        v_add = vector_new * self.memory_mixing_rate + vector_recall * (1.0 - self.memory_mixing_rate)
+        return v_add / np.linalg.norm(v_add)
 
     def _verify_dim_(self, vector_new):
         if len(vector_new) != self.dim_vector:
