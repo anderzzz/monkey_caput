@@ -28,10 +28,11 @@ class AELearner(_Learner):
                        lr_init=0.01, momentum=0.9,
                        scheduler_step_size=15, scheduler_gamma=0.1,
                        freeze_encoder=False,
-                       img_input_dim=224, img_n_splits=6, crop_step_size=32, crop_dim=64):
+                       img_input_dim=224, img_n_splits=6, crop_step_size=32, crop_dim=64,
+                       square=True):
 
         dataset_kwargs = {'img_input_dim': img_input_dim, 'img_n_splits': img_n_splits,
-                          'crop_step_size': crop_step_size, 'crop_dim': crop_dim}
+                          'crop_step_size': crop_step_size, 'crop_dim': crop_dim, 'square': square}
 
         super(AELearner, self).__init__(run_label=run_label, random_seed=random_seed, f_out=f_out,
                                         raw_csv_toc=raw_csv_toc, raw_csv_root=raw_csv_root,
@@ -138,13 +139,13 @@ class AELearner(_Learner):
 
         '''
         self.model.eval()
-        if not dloader is None:
+        if dloader is None:
             dloader = self.dataloader
 
         ret_batch = []
         for inputs in dloader:
-            inputs[self.dataset.returnkey.image] = inputs[self.dataset.returnkey.image].to(self.device)
-            output = self.model(inputs)
+            image = inputs[self.dataset.returnkey.image].to(self.device)
+            output = self.model(image)
             for img in output:
                 img = img.detach()
                 if not untransform is None:

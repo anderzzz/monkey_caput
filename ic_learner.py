@@ -142,17 +142,14 @@ class ICLearner(_Learner):
                 # Update aggregates and reporting
                 running_loss += loss.item() * size_batch
                 running_correct += torch.sum(pred == label.data)
-                print (running_correct)
                 if self.inp_show_batch_progress:
                     n_instances += size_batch
                     progress_bar(n_instances, self.inp_test_datasetsize)
 
             running_loss = running_loss / float(self.inp_test_datasetsize)
             running_correct = running_correct / float(self.inp_test_datasetsize)
-            print (running_correct)
             print('\nTest Loss: {:.4f}'.format(running_loss), file=self.inp_f_out)
             print('\nTest Accuracy: {:.4f}'.format(running_correct), file=self.inp_f_out)
-            raise RuntimeError
 
     def eval(self, image, label):
         '''Method to compute the loss of a model given an input.

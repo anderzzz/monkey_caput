@@ -140,7 +140,6 @@ class LALearner(_Learner):
 
             self.save_model(self.inp_save_tmp_name)
 
-
     def eval(self, clusterer, clusterer_kwargs={}, dloader=None):
         '''Evaluate cluster properties for the data provided by data loader
 
@@ -157,7 +156,7 @@ class LALearner(_Learner):
 
         '''
         self.model.eval()
-        if not dloader is None:
+        if dloader is None:
             dloader = self.dataloader
 
         all_output = None

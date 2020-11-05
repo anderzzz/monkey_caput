@@ -40,7 +40,7 @@ class LearnerInterface(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def eval(self):
+    def eval(self, **kwargs):
         '''Evaluate model'''
         raise NotImplementedError
 
@@ -149,6 +149,7 @@ class _Learner(LearnerInterface):
             if 'inp_' == attr_name[0:4]:
                 key = attr_name[4:]
                 print('{} : {}'.format(key, attr_value), file=self.inp_f_out)
+
 
 def progress_bar(current, total, barlength=20):
     '''Print progress of training of a batch. Helpful in PyCharm'''
