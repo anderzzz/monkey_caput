@@ -1,5 +1,7 @@
 '''Class to define a complete run, that is, model, data and training metaparameters
 
+NOT FUNCTIONAL
+
 '''
 import sys
 import time

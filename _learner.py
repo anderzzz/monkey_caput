@@ -7,7 +7,6 @@ Written by: Anders Ohrn, October 2020
 '''
 import sys
 import time
-import copy
 import abc
 
 from numpy.random import seed, randint
