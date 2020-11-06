@@ -1,6 +1,6 @@
 # monkey_caput
-Code used in fungi image analysis, supervised and unsupervised. Effort described in Towards Data Science, see here and here.
+Code used in fungi image analysis, supervised and unsupervised. Effort described in Towards Data Science, see <insert link>.
 
-The fungi image data is loaded and pre-procssed in `fungiimg.py` in which the DataSet class is created. The image classification template models are loaded and modified in `model_init.py`. The supervised training of the model takes place in `runner.py`.
+The fungi image data is loaded and pre-procssed in `fungidata.py` in which the DataSet class is created through a factory method. That includes full images, grid images, with or without ground-truth label or index in dataset. 
 
-The auto-encoder is defined in `ae_deep.py`. Utilities for the clustering is found in `cluster_utils.py`. The training of the auto-encoder as well as the clustering of its code are found in `runner_ae.py`.
+Image classification efforts are in files starting with `ic`. The template models for example are loaded in `ic_template_models.py`. The auto-encoder is defined in `ae_deep.py` with a learner class in `ae_learner`. Local Aggregation criterion is found in `cluster_utils` and its learner class in `la_learner`. The training inherits from `_learner`, which can be further generalized.
