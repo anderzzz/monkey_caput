@@ -1,6 +1,6 @@
 '''Class to define a complete run, that is, model, data and training metaparameters
 
-NOT FUNCTIONAL
+NOT FUNCTIONAL, INCLUDED AS LEGACY. REFER TO SEPARATE RUN SCRIPTS, LIKE la_runs.py
 
 '''
 import sys

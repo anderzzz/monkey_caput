@@ -5,7 +5,8 @@ from pandas import IndexSlice
 from numpy.random import shuffle
 
 from ae_learner import AELearner
-from fungiimg import UnNormalizeTransform
+from img_transforms import UnNormalizeTransform
+
 
 #learner_1 = AELearner(run_label='simple test run',
 #                      raw_csv_toc='../../Desktop/Fungi/toc_full.csv', raw_csv_root='../../Desktop/Fungi',
